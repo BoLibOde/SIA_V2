@@ -1,0 +1,4 @@
+requests
+smbus2
+RPi.GPIO
+pygame
