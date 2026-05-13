@@ -27,8 +27,7 @@ The script will:
 After setup, start the device app with:
 
 ```bash
-cd ~/Desktop/SIA_V2
-.venv/bin/python -m device.main
+~/Desktop/SIA_V2/.venv/bin/python -m device.main
 ```
 
 ## Server run
