@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import func
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -18,6 +20,17 @@ def _score_to_smiley(score: float) -> str:
     return "neutral"
 
 
+def _range_start(now: datetime, range_name: str) -> datetime:
+    if range_name == "day":
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if range_name == "week":
+        start = now - timedelta(days=now.weekday())
+        return start.replace(hour=0, minute=0, second=0, microsecond=0)
+    if range_name == "month":
+        return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 @router.get("/{device_id}/summary", response_model=SummaryResponse)
 def get_summary(
     device_id: str,
@@ -27,6 +40,9 @@ def get_summary(
     device = db.query(Device).filter(Device.device_id == device_id).first()
     if device is None:
         raise HTTPException(status_code=404, detail="device not found")
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    start_time = _range_start(now, range)
 
     query = (
         db.query(
@@ -38,6 +54,8 @@ def get_summary(
             func.coalesce(func.avg(HourlyUpload.avg_co2_ppm), 0.0),
         )
         .filter(HourlyUpload.device_id == device.id)
+        .filter(HourlyUpload.period_start >= start_time)
+        .filter(HourlyUpload.period_start <= now)
     )
 
     result = query.one()
