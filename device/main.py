@@ -52,6 +52,7 @@ class DeviceApp:
                         f"Counts: good={counts.good}, neutral={counts.neutral}, bad={counts.bad}"
                     )
 
+                self.upload_service.retry_pending_uploads()
                 self._try_hourly_upload(now)
                 time.sleep(self.config.ui_refresh_seconds)
         except KeyboardInterrupt:
@@ -75,7 +76,7 @@ class DeviceApp:
 
         payload = self.aggregation_service.build_hourly_payload(
             device_id=self.config.device_id,
-            mood_counts=self.gpio_handler.get_counts(),
+            mood_counts=self.gpio_handler.get_hourly_counts(),
             sensor_samples=self.sensor_service.get_hour_samples(),
             now=now,
         )
@@ -86,8 +87,10 @@ class DeviceApp:
         success = self.upload_service.upload_hourly_payload(payload)
         if success:
             self.last_uploaded_hour = current_hour
+            self.gpio_handler.clear_hourly_counts()
             print(f"Uploaded hourly payload for {current_hour.isoformat()}")
         else:
+            self.upload_service.save_failed_upload(payload)
             print("Hourly upload failed")
 
 

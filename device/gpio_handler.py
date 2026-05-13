@@ -1,9 +1,15 @@
 import time
-from typing import Callable
+from dataclasses import dataclass
+from datetime import datetime
 
 import RPi.GPIO as GPIO
 
-from device.models import MoodCounts
+
+@dataclass
+class MoodCounts:
+    good: int = 0
+    neutral: int = 0
+    bad: int = 0
 
 
 class GpioHandler:
@@ -13,12 +19,14 @@ class GpioHandler:
         self.bad_pin = bad_pin
         self.debounce_seconds = debounce_seconds
 
-        self.counts = MoodCounts()
+        self.total_counts = MoodCounts()
+        self.hourly_counts = MoodCounts()
         self.last_pressed = {
             "good": 0.0,
             "neutral": 0.0,
             "bad": 0.0,
         }
+        self.current_hour_key = self._hour_key(datetime.utcnow())
 
     def start(self) -> None:
         GPIO.setmode(GPIO.BCM)
@@ -34,11 +42,33 @@ class GpioHandler:
         GPIO.cleanup()
 
     def get_counts(self) -> MoodCounts:
+        self._roll_hour_if_needed()
         return MoodCounts(
-            good=self.counts.good,
-            neutral=self.counts.neutral,
-            bad=self.counts.bad,
+            good=self.total_counts.good,
+            neutral=self.total_counts.neutral,
+            bad=self.total_counts.bad,
         )
+
+    def get_hourly_counts(self) -> MoodCounts:
+        self._roll_hour_if_needed()
+        return MoodCounts(
+            good=self.hourly_counts.good,
+            neutral=self.hourly_counts.neutral,
+            bad=self.hourly_counts.bad,
+        )
+
+    def clear_hourly_counts(self) -> None:
+        self.hourly_counts = MoodCounts()
+        self.current_hour_key = self._hour_key(datetime.utcnow())
+
+    def _hour_key(self, value: datetime) -> str:
+        return value.strftime("%Y-%m-%d-%H")
+
+    def _roll_hour_if_needed(self) -> None:
+        now_key = self._hour_key(datetime.utcnow())
+        if now_key != self.current_hour_key:
+            self.hourly_counts = MoodCounts()
+            self.current_hour_key = now_key
 
     def _can_press(self, mood: str) -> bool:
         now = time.time()
@@ -48,13 +78,19 @@ class GpioHandler:
         return True
 
     def _good_pressed(self, channel: int) -> None:
+        self._roll_hour_if_needed()
         if self._can_press("good"):
-            self.counts.good += 1
+            self.total_counts.good += 1
+            self.hourly_counts.good += 1
 
     def _neutral_pressed(self, channel: int) -> None:
+        self._roll_hour_if_needed()
         if self._can_press("neutral"):
-            self.counts.neutral += 1
+            self.total_counts.neutral += 1
+            self.hourly_counts.neutral += 1
 
     def _bad_pressed(self, channel: int) -> None:
+        self._roll_hour_if_needed()
         if self._can_press("bad"):
-            self.counts.bad += 1
+            self.total_counts.bad += 1
+            self.hourly_counts.bad += 1
