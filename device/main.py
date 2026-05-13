@@ -5,6 +5,7 @@ from device.aggregation_service import AggregationService
 from device.config import DeviceConfig
 from device.gpio_handler import GpioHandler
 from device.sensor_service import SensorService
+from device.ui import DeviceUI
 from device.upload_service import UploadService
 
 
@@ -22,6 +23,12 @@ class DeviceApp:
             server_base_url=self.config.server_base_url,
             upload_endpoint=self.config.upload_endpoint,
         )
+        self.ui = DeviceUI(
+            width=self.config.display_width,
+            height=self.config.display_height,
+            fullscreen=self.config.fullscreen,
+        )
+
         self.running = False
         self.last_uploaded_hour: datetime | None = None
 
@@ -30,30 +37,20 @@ class DeviceApp:
         self.sensor_service.start()
         self.gpio_handler.start()
 
-        print(f"[{datetime.now().isoformat()}] Device app started")
-        print(f"Display: {self.config.display_width}x{self.config.display_height}")
-
         try:
             while self.running:
                 now = datetime.utcnow()
                 latest = self.sensor_service.get_latest_reading()
-                counts = self.gpio_handler.get_counts()
+                hourly_counts = self.gpio_handler.get_hourly_counts()
 
-                if latest is not None:
-                    print(
-                        f"Temp: {latest.temperature_c:.1f} C | "
-                        f"Humidity: {latest.humidity_pct:.1f} % | "
-                        f"CO2: {latest.co2_ppm} ppm | "
-                        f"Counts: good={counts.good}, neutral={counts.neutral}, bad={counts.bad}"
-                    )
-                else:
-                    print(
-                        f"No sensor data yet | "
-                        f"Counts: good={counts.good}, neutral={counts.neutral}, bad={counts.bad}"
-                    )
+                if not self.ui.handle_events():
+                    self.running = False
+                    break
 
+                self.ui.draw(latest, hourly_counts)
                 self.upload_service.retry_pending_uploads()
                 self._try_hourly_upload(now)
+
                 time.sleep(self.config.ui_refresh_seconds)
         except KeyboardInterrupt:
             print("Stopping device app...")
@@ -64,6 +61,7 @@ class DeviceApp:
         self.running = False
         self.sensor_service.stop()
         self.gpio_handler.stop()
+        self.ui.close()
 
     def _try_hourly_upload(self, now: datetime) -> None:
         current_hour = now.replace(minute=0, second=0, microsecond=0)
@@ -88,10 +86,8 @@ class DeviceApp:
         if success:
             self.last_uploaded_hour = current_hour
             self.gpio_handler.clear_hourly_counts()
-            print(f"Uploaded hourly payload for {current_hour.isoformat()}")
         else:
             self.upload_service.save_failed_upload(payload)
-            print("Hourly upload failed")
 
 
 if __name__ == "__main__":
