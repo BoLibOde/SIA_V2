@@ -1,9 +1,9 @@
-name: Deploy to Ubuntu Server
+name: Deploy to Ubuntu Server via Tailscale
 
 on:
   push:
     branches:
-      - main   # ggf. auf 'master' ändern, wenn dein Haupt-Branch so heißt
+      - main   # ggf. anpassen, falls dein Haupt-Branch anders heißt (z.B. master)
 
 jobs:
   deploy:
@@ -13,21 +13,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Deploy via SSH
+      # 1) Mit deinem Tailnet verbinden (Tailscale)
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          # optional: caching beschleunigt spätere Läufe
+          use-cache: true
+
+      # 2) Deploy auf den Server über Tailscale-SSH
+      - name: Deploy via SSH over Tailscale
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
+          host: 100.xxx.xxx.xxx           # HIER: Tailscale-IP deiner Ubuntu-VM eintragen
+          username: deploy
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
           script: |
             cd /home/deploy/SIA-web
             git pull origin main
-            # Python-Dependencies aktualisieren (falls requirements.txt existiert)
-            if [ -f requirements.txt ]; then
+
+            # Virtualenv + requirements-server.txt (optional, aber praktisch)
+            if [ -f requirements-server.txt ]; then
               python3 -m venv venv || true
               . venv/bin/activate
-              pip install -r requirements.txt
+              pip install -r requirements-server.txt
               deactivate
             fi
-            # Service neu starten (passen wir gleich an)
+
+            # Service neu starten
             sudo systemctl restart sia-web || systemctl restart sia-web
