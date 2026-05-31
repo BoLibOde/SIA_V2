@@ -2,6 +2,44 @@
 
 Clean rebuild of the SIA mood bar-o-meter project.
 
+## Repository file structure
+
+```text
+SIA_V2/
+├── README.md
+├── setup.sh
+├── requirements-device.txt
+├── requirements-server.txt
+├── device/
+│   ├── __init__.py
+│   ├── aggregation_service.py
+│   ├── config.py
+│   ├── gpio_handler.py
+│   ├── main.py
+│   ├── models.py
+│   ├── sensor_service.py
+│   ├── ui.py
+│   ├── upload_service.py
+│   └── assets/
+│       ├── bad.png
+│       ├── bad.svg
+│       ├── empty.txt
+│       ├── good.png
+│       ├── good.svg
+│       ├── meh.png
+│       └── meh.svg
+└── server/
+    ├── __init__.py
+    ├── db.py
+    ├── main.py
+    ├── models.py
+    ├── schemas.py
+    └── routes/
+        ├── __init__.py
+        ├── ingest.py
+        └── summary.py
+```
+
 ## Quick setup (Raspberry Pi / target machine)
 
 Run `setup.sh` once to clone the repo into `~/Desktop/SIA_V2` and install everything.  
