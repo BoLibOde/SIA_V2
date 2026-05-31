@@ -27,7 +27,7 @@ jobs:
       - name: Deploy via SSH over Tailscale
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 100.xxx.xxx.xxx           # HIER: Tailscale-IP deiner Ubuntu-VM eintragen
+          host: 100.74.7.35           # HIER: Tailscale-IP deiner Ubuntu-VM eintragen
           username: deploy
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
