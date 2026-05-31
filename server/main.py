@@ -21,4 +21,4 @@ def root() -> dict[str, str]:
 app.include_router(ingest_router)
 app.include_router(summary_router)
 #test
-print("test")
+
