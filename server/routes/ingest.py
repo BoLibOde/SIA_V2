@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -17,6 +17,10 @@ from server.schemas import (
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
 
 
+def _now_naive_utc() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 @router.post("/hourly", response_model=HourlyUploadResponse)
 def ingest_hourly(payload: HourlyUploadRequest, db: Session = Depends(get_db)) -> HourlyUploadResponse:
     if payload.period_end <= payload.period_start:
@@ -26,7 +30,7 @@ def ingest_hourly(payload: HourlyUploadRequest, db: Session = Depends(get_db)) -
     if device is None:
         device = Device(
             device_id=payload.device_id,
-            created_at=datetime.utcnow(),
+            created_at=_now_naive_utc(),
         )
         db.add(device)
         db.flush()
@@ -51,10 +55,10 @@ def ingest_hourly(payload: HourlyUploadRequest, db: Session = Depends(get_db)) -
         avg_humidity_pct=payload.sensor_avg.humidity_pct,
         avg_co2_ppm=payload.sensor_avg.co2_ppm,
         sample_count=payload.sample_count,
-        created_at=datetime.utcnow(),
+        created_at=_now_naive_utc(),
     )
 
-    device.last_seen_at = datetime.utcnow()
+    device.last_seen_at = _now_naive_utc()
 
     db.add(hourly_upload)
     db.commit()
@@ -64,13 +68,13 @@ def ingest_hourly(payload: HourlyUploadRequest, db: Session = Depends(get_db)) -
 
 @router.post("/live", response_model=LiveStateResponse)
 def ingest_live(payload: LiveIngestRequest, db: Session = Depends(get_db)) -> LiveStateResponse:
-    event_time = payload.timestamp or datetime.utcnow()
+    event_time = payload.timestamp or _now_naive_utc()
 
     device = db.query(Device).filter(Device.device_id == payload.device_id).first()
     if device is None:
         device = Device(
             device_id=payload.device_id,
-            created_at=datetime.utcnow(),
+            created_at=_now_naive_utc(),
         )
         db.add(device)
         db.flush()
@@ -88,7 +92,7 @@ def ingest_live(payload: LiveIngestRequest, db: Session = Depends(get_db)) -> Li
     live_state.latest_temperature_c = payload.sensor_current.temperature_c
     live_state.latest_humidity_pct = payload.sensor_current.humidity_pct
     live_state.latest_co2_ppm = payload.sensor_current.co2_ppm
-    live_state.updated_at = datetime.utcnow()
+    live_state.updated_at = _now_naive_utc()
 
     device.last_seen_at = event_time
     db.commit()

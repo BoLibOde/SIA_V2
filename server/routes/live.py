@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -9,6 +9,10 @@ from server.schemas import LiveDashboardResponse, LiveStateResponse, MoodCountsS
 
 
 router = APIRouter(prefix="/api/v1", tags=["live"])
+
+
+def _now_naive_utc() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _device_live_payload(device: Device, live_state: DeviceLiveState) -> LiveStateResponse:
@@ -39,7 +43,7 @@ def get_live_dashboard(db: Session = Depends(get_db)) -> LiveDashboardResponse:
         .all()
     )
     devices = [_device_live_payload(device, live_state) for device, live_state in rows]
-    return LiveDashboardResponse(devices=devices, generated_at=datetime.utcnow())
+    return LiveDashboardResponse(devices=devices, generated_at=_now_naive_utc())
 
 
 @router.get("/devices/{device_id}/live", response_model=LiveStateResponse)
@@ -65,7 +69,7 @@ def get_device_today(device_id: str, db: Session = Depends(get_db)) -> LiveState
     if live_state is not None:
         return _device_live_payload(device, live_state)
 
-    now = datetime.utcnow()
+    now = _now_naive_utc()
     start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     rows = (
         db.query(HourlyUpload)

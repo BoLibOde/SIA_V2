@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -225,7 +225,7 @@ def get_summary(
     group_by: str = Query(default="day", pattern="^(hour|day|week|month|year)$"),
     db: Session = Depends(get_db),
 ) -> SummaryResponse:
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.utcnow()
     resolved_from = from_dt or now.replace(hour=0, minute=0, second=0, microsecond=0)
     resolved_to = to_dt or now
     if resolved_to <= resolved_from:
@@ -249,7 +249,7 @@ def get_device_summary_legacy(
     device = db.query(Device).filter(Device.device_id == device_id).first()
     if device is None:
         raise HTTPException(status_code=404, detail="device not found")
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.utcnow()
     start, end = _summary_range(now, range)
     return _build_summary(
         db=db,

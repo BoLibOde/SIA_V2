@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -15,6 +15,10 @@ from server.schemas import (
 router = APIRouter(prefix="/api/v1/devices", tags=["locations"])
 
 
+def _now_naive_utc() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 @router.post("/{device_id}/location", response_model=DeviceLocationAssignResponse)
 def assign_device_location(
     device_id: str,
@@ -25,7 +29,7 @@ def assign_device_location(
     if device is None:
         raise HTTPException(status_code=404, detail="device not found")
 
-    start_time = payload.valid_from or datetime.utcnow()
+    start_time = payload.valid_from or _now_naive_utc()
     open_range = (
         db.query(DeviceLocation)
         .filter(DeviceLocation.device_id == device.id)
@@ -46,7 +50,7 @@ def assign_device_location(
         location=payload.location,
         valid_from=start_time,
         valid_to=None,
-        created_at=datetime.utcnow(),
+        created_at=_now_naive_utc(),
     )
     db.add(location_row)
     device.location = payload.location
