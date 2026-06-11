@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from server.db import get_db
 from server.models import Device, DeviceLocation, HourlyUpload
 from server.schemas import (
+    HistoryEntrySchema,
+    HistoryResponse,
     MoodCountsSchema,
     SensorAverageSchema,
     SummaryResponse,
@@ -259,3 +261,47 @@ def get_device_summary_legacy(
         device_filter=device_id,
         location_filter=None,
     )
+
+
+@legacy_router.get("/{device_id}/history", response_model=HistoryResponse)
+def get_device_history(
+    device_id: str,
+    hours: int = Query(default=24, ge=1, le=720),
+    db: Session = Depends(get_db),
+) -> HistoryResponse:
+    device = db.query(Device).filter(Device.device_id == device_id).first()
+    if device is None:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    since = now - timedelta(hours=hours)
+
+    rows = (
+        db.query(HourlyUpload)
+        .filter(HourlyUpload.device_id == device.id)
+        .filter(HourlyUpload.period_start >= since)
+        .order_by(HourlyUpload.period_start)
+        .all()
+    )
+
+    entries = []
+    for row in rows:
+        total = row.good_count + row.neutral_count + row.bad_count
+        score = 0.0 if total == 0 else (row.good_count - row.bad_count) / total
+        entries.append(
+            HistoryEntrySchema(
+                period_start=row.period_start.isoformat(),
+                period_end=row.period_end.isoformat(),
+                counts=MoodCountsSchema(
+                    good=row.good_count,
+                    neutral=row.neutral_count,
+                    bad=row.bad_count,
+                ),
+                score=round(float(score), 3),
+                smiley=_score_to_smiley(score),
+                avg_temperature_c=row.avg_temperature_c,
+                avg_humidity_pct=row.avg_humidity_pct,
+                avg_co2_ppm=row.avg_co2_ppm,
+            )
+        )
+    return HistoryResponse(device_id=device_id, hours=hours, entries=entries)

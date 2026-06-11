@@ -2,7 +2,7 @@
 
 Clean rebuild of the SIA mood bar-o-meter project.
 
-## Repository file structure
+## Repository structure
 
 ```text
 SIA_V2/
@@ -11,19 +11,17 @@ SIA_V2/
 ├── requirements-device.txt
 ├── requirements-server.txt
 ├── device/
-│   ├── __init__.py
+│   ├── config.py           # All settings, overridable via env vars
+│   ├── main.py             # Entry point
+│   ├── gpio_handler.py     # Button input + debounce
+│   ├── sensor_service.py   # SCD41 sensor or simulation
 │   ├── aggregation_service.py
-│   ├── config.py
-│   ├── gpio_handler.py
-│   ├── main.py
+│   ├── upload_service.py   # HTTP upload + retry
+│   ├── ui.py               # Pygame display + status bar
 │   ├── models.py
-│   ├── sensor_service.py
-│   ├── ui.py
-│   ├── upload_service.py
 │   └── assets/
 │       ├── bad.png
 │       ├── bad.svg
-│       ├── empty.txt
 │       ├── good.png
 │       ├── good.svg
 │       ├── meh.png
@@ -31,152 +29,111 @@ SIA_V2/
 └── server/
     ├── __init__.py
     ├── db.py
-    ├── main.py
+    ├── main.py             # FastAPI app (CORS enabled)
     ├── models.py
     ├── schemas.py
+    ├── services/
+    │   └── summary_service.py   # Calculation logic
     └── routes/
         ├── __init__.py
-        ├── ingest.py
-        ├── live.py
-        ├── locations.py
-        └── summary.py
+        ├── health.py       # GET /api/v1/health
+        ├── ingest.py       # POST /api/v1/ingest/hourly + /live
+        ├── live.py         # Live dashboard endpoints
+        ├── locations.py    # Device location history
+        └── summary.py      # Summary + history endpoints
 ```
 
-## Quick setup (Raspberry Pi / target machine)
-
-Run `setup.sh` once to clone the repo into `~/Desktop/SIA_V2` and install everything.  
-Run it again at any time to update only changed files.
+## Quick setup (Raspberry Pi)
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/BoLibOde/SIA_V2/main/setup.sh)
 ```
 
-Or, if you already have the file locally:
-
+Or locally:
 ```bash
-chmod +x setup.sh
-./setup.sh
+chmod +x setup.sh && ./setup.sh
 ```
 
-The script will:
-1. Install required system packages (`git`, `python3`, `pygame`, etc.)
-2. Clone `BoLibOde/SIA_V2` into `~/Desktop/SIA_V2` (or pull the latest changes if already cloned)
-3. Install all Python dependencies from `requirements-device.txt` and `requirements-server.txt`
-4. Verify the repo state and report success or any missing files
-
-After setup, start the device app with:
-
+Start the device app:
 ```bash
+export SIA_SERVER_URL="http://<server-tailscale-ip>:8000"
 ~/Desktop/SIA_V2/.venv/bin/python -m device.main
 ```
 
-## Server run
-
-1. Create a virtual environment
-2. Install dependencies from `requirements-server.txt`
-3. Set `DATABASE_URL`
-4. Run:
-
+For development without hardware (simulated sensor, windowed mode):
 ```bash
-uvicorn server.main:app --reload
+export SIA_SIMULATION=true
+export SIA_FULLSCREEN=false
+python -m device.main
 ```
 
-## Backend data model (prototype)
+## Server setup
 
-- `hourly_uploads`: historical base data (hourly rollups)
-- `device_live_states`: latest live values + today counters for dashboard
-- `device_locations`: location history with `valid_from` / `valid_to`
+```bash
+cd server
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-server.txt
+
+export DATABASE_URL="******localhost:5432/sia_v2"
+uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+API docs available at `http://localhost:8000/docs`.
+
+## Backend data model
+
+- `hourly_uploads` – historical base data (hourly rollups)
+- `device_live_states` – latest live values + today counters for dashboard
+- `device_locations` – location history with `valid_from` / `valid_to`
 
 Location history keeps old data correct when a device moves between rooms.
 
-## API overview
+## Key API endpoints
+
+### Health
+
+| Method | Path               | Description          |
+|--------|--------------------|----------------------|
+| GET    | `/api/v1/health`   | Server health check  |
 
 ### Ingest
 
-- `POST /api/v1/ingest/hourly`
-- `POST /api/v1/ingest/live`
-
-Live payload example:
-
-```json
-{
-  "device_id": "device-01",
-  "timestamp": "2026-06-11T16:30:00",
-  "latest_mood": "good",
-  "today_counts": { "good": 12, "neutral": 5, "bad": 2 },
-  "sensor_current": { "temperature_c": 22.1, "humidity_pct": 47.3, "co2_ppm": 560 }
-}
-```
+| Method | Path                      | Description                      |
+|--------|---------------------------|----------------------------------|
+| POST   | `/api/v1/ingest/hourly`   | Device uploads hourly aggregate  |
+| POST   | `/api/v1/ingest/live`     | Device pushes live state         |
 
 ### Live dashboard
 
-- `GET /api/v1/live`
-- `GET /api/v1/devices/{device_id}/live`
-- `GET /api/v1/devices/{device_id}/today`
+| Method | Path                              | Description                  |
+|--------|-----------------------------------|------------------------------|
+| GET    | `/api/v1/live`                    | All devices live dashboard   |
+| GET    | `/api/v1/devices/{id}/live`       | Single device live state     |
+| GET    | `/api/v1/devices/{id}/today`      | Today's counts for a device  |
 
 ### Location history
 
-- `POST /api/v1/devices/{device_id}/location`
-- `GET /api/v1/devices/{device_id}/locations`
+| Method | Path                               | Description                         |
+|--------|------------------------------------|-------------------------------------|
+| POST   | `/api/v1/devices/{id}/location`    | Assign location with valid_from     |
+| GET    | `/api/v1/devices/{id}/locations`   | Get location history                |
 
-Assign location example:
+### Historical summary (for website)
 
-```json
-{
-  "location": "Raum A",
-  "valid_from": "2026-06-06T00:00:00"
-}
-```
+| Method | Path                                    | Description                               |
+|--------|-----------------------------------------|-------------------------------------------|
+| GET    | `/api/v1/summary`                       | Flexible summary with filter + group_by   |
+| GET    | `/api/v1/devices/{id}/summary`          | Per-device summary (legacy)               |
+| GET    | `/api/v1/devices/{id}/history?hours=24` | Hourly history for charting               |
 
-### Historical summary (flexible for website)
+See [`docs/api.md`](docs/api.md) for full request/response details.
 
-- `GET /api/v1/summary?from=...&to=...&device_id=...&location=...&group_by=hour|day|week|month|year`
+## Tailscale
 
-Response includes totals, percentages, score, smiley, sensor averages, and chart `series`.
+The device connects to the server over Tailscale. See [`docs/tailscale-setup.md`](docs/tailscale-setup.md).
 
-Example request:
+## Docs
 
-```text
-/api/v1/summary?from=2026-06-01T00:00:00&to=2026-06-30T23:59:59&group_by=day&device_id=device-01&location=Raum%20A
-```
-
-Example response:
-
-```json
-{
-  "from_dt": "2026-06-01T00:00:00",
-  "to_dt": "2026-06-30T23:59:59",
-  "group_by": "day",
-  "device_filter": "device-01",
-  "location_filter": "Raum A",
-  "counts": { "good": 180, "neutral": 50, "bad": 20 },
-  "percentages": { "good": 72, "neutral": 20, "bad": 8 },
-  "sensor_avg": { "temperature_c": 22.4, "humidity_pct": 45.8, "co2_ppm": 590 },
-  "score": 0.64,
-  "smiley": "good",
-  "series": [
-    {
-      "bucket_start": "2026-06-01T00:00:00",
-      "device_id": "device-01",
-      "location": "Raum A",
-      "counts": { "good": 6, "neutral": 2, "bad": 1 },
-      "sensor_avg": { "temperature_c": 22.0, "humidity_pct": 46.2, "co2_ppm": 570 },
-      "score": 0.556,
-      "smiley": "good"
-    }
-  ]
-}
-```
-
-### Day / Week / Month / Year JSON usage
-
-Use the same endpoint and only change `group_by` + date range:
-
-- Day: `group_by=hour`, range = one day
-- Week: `group_by=day`, range = one week
-- Month: `group_by=day` or `group_by=week`, range = one month
-- Year: `group_by=month`, range = one year
-
-Legacy endpoint still exists:
-
-- `GET /api/v1/devices/{device_id}/summary?range=day|week|month|year`
+- [`docs/architecture.md`](docs/architecture.md) – component overview and data flow
+- [`docs/api.md`](docs/api.md) – API reference for the website teammate
+- [`docs/tailscale-setup.md`](docs/tailscale-setup.md) – Tailscale and prototype setup
