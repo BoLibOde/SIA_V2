@@ -20,7 +20,7 @@ sudo apt-get install -y -q \
     python3-pip \
     python3-venv \
     python3-pygame \
-    libatlas-base-dev \
+    libopenblas-dev \
     i2c-tools
 
 # 2. Clone or update the repo

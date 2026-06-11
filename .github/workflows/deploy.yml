@@ -45,3 +45,36 @@ jobs:
 
             # Service neu starten
             sudo systemctl restart sia-web || systemctl restart sia-web
+
+  deploy-device:
+    runs-on: ubuntu-latest
+    needs: deploy   # starts only after server deployment succeeds
+
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          use-cache: true
+
+      - name: Deploy to Raspberry Pi via SSH over Tailscale
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.RPI_HOST }}
+          username: ${{ secrets.RPI_USER }}
+          key: ${{ secrets.RPI_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            cd ~/Desktop/SIA_V2
+            git pull origin main
+
+            # Update dependencies
+            if [ -f requirements-device.txt ] && [ -x .venv/bin/pip ]; then
+              .venv/bin/pip install --quiet -r requirements-device.txt
+            fi
+
+            # Restart device service
+            sudo systemctl restart sia-device
