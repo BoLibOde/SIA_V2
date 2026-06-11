@@ -36,3 +36,28 @@ class SummaryResponse(BaseModel):
     sensor_avg: SensorAverageSchema
     score: float
     smiley: str
+
+
+class GlobalSummaryResponse(BaseModel):
+    range: str
+    device_count: int
+    counts: MoodCountsSchema
+    sensor_avg: SensorAverageSchema
+    score: float
+    smiley: str
+
+
+class HistoryEntrySchema(BaseModel):
+    period_start: str
+    period_end: str
+    counts: MoodCountsSchema
+    score: float
+    smiley: str
+    avg_temperature_c: float
+    avg_co2_ppm: int
+
+
+class HistoryResponse(BaseModel):
+    device_id: str
+    hours: int
+    entries: list[HistoryEntrySchema]

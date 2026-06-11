@@ -7,7 +7,7 @@ from device.models import SensorReading
 
 
 class DeviceUI:
-    def __init__(self, width: int, height: int, fullscreen: bool = True) -> None:
+    def __init__(self, width: int, height: int, fullscreen: bool = True, device_id: str = "") -> None:
         pygame.init()
         pygame.font.init()
 
@@ -17,16 +17,20 @@ class DeviceUI:
 
         self.width = width
         self.height = height
+        self.device_id = device_id
 
         self.bg_color = (245, 247, 250)
         self.card_color = (255, 255, 255)
         self.border_color = (220, 225, 232)
         self.text_color = (30, 35, 40)
         self.subtle_color = (100, 110, 120)
+        self.ok_color = (50, 145, 80)
+        self.err_color = (180, 60, 60)
 
         self.title_font = pygame.font.SysFont("arial", 34, bold=True)
         self.label_font = pygame.font.SysFont("arial", 24, bold=True)
         self.value_font = pygame.font.SysFont("arial", 30)
+        self.status_font = pygame.font.SysFont("arial", 18)
 
         assets_dir = Path(__file__).parent / "assets"
         self.smileys = {
@@ -47,7 +51,13 @@ class DeviceUI:
                 return False
         return True
 
-    def draw(self, reading: SensorReading | None, counts: MoodCounts) -> None:
+    def draw(
+        self,
+        reading: SensorReading | None,
+        counts: MoodCounts,
+        server_connected: bool = False,
+        last_upload_status: str = "—",
+    ) -> None:
         status = self._pick_status(counts)
 
         self.screen.fill(self.bg_color)
@@ -55,6 +65,7 @@ class DeviceUI:
         self._draw_sensor_card(reading)
         self._draw_counts_card(counts)
         self._draw_smiley_card(status)
+        self._draw_status_bar(server_connected, last_upload_status)
         pygame.display.flip()
 
     def close(self) -> None:
@@ -98,9 +109,9 @@ class DeviceUI:
         title = self.label_font.render("Current Hour Mood Counts", True, self.text_color)
         self.screen.blit(title, (60, 395))
 
-        good = self.value_font.render(f"Good: {counts.good}", True, (50, 145, 80))
+        good = self.value_font.render(f"Good: {counts.good}", True, self.ok_color)
         neutral = self.value_font.render(f"Neutral: {counts.neutral}", True, (180, 140, 40))
-        bad = self.value_font.render(f"Bad: {counts.bad}", True, (180, 60, 60))
+        bad = self.value_font.render(f"Bad: {counts.bad}", True, self.err_color)
 
         self.screen.blit(good, (60, 445))
         self.screen.blit(neutral, (60, 490))
@@ -121,6 +132,26 @@ class DeviceUI:
         label_x = 520 + (460 - label.get_width()) // 2
         self.screen.blit(label, (label_x, 420))
 
+    def _draw_status_bar(self, server_connected: bool, last_upload_status: str) -> None:
+        bar_y = self.height - 34
+        pygame.draw.rect(self.screen, self.border_color, pygame.Rect(0, bar_y, self.width, 34))
+
+        conn_color = self.ok_color if server_connected else self.err_color
+        conn_text = "Server: connected" if server_connected else "Server: offline"
+
+        parts = [
+            (f"Device: {self.device_id}", self.subtle_color),
+            (conn_text, conn_color),
+            (f"Last upload: {last_upload_status}", self.subtle_color),
+        ]
+
+        x = 16
+        for text, color in parts:
+            surf = self.status_font.render(text, True, color)
+            self.screen.blit(surf, (x, bar_y + 8))
+            x += surf.get_width() + 40
+
     def _draw_card(self, rect: pygame.Rect) -> None:
         pygame.draw.rect(self.screen, self.card_color, rect, border_radius=18)
         pygame.draw.rect(self.screen, self.border_color, rect, width=2, border_radius=18)
+

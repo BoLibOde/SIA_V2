@@ -2,7 +2,7 @@
 
 Clean rebuild of the SIA mood bar-o-meter project.
 
-## Repository file structure
+## Repository structure
 
 ```text
 SIA_V2/
@@ -11,70 +11,88 @@ SIA_V2/
 ├── requirements-device.txt
 ├── requirements-server.txt
 ├── device/
-│   ├── __init__.py
+│   ├── config.py           # All settings, overridable via env vars
+│   ├── main.py             # Entry point
+│   ├── gpio_handler.py     # Button input + debounce
+│   ├── sensor_service.py   # SCD41 sensor or simulation
 │   ├── aggregation_service.py
-│   ├── config.py
-│   ├── gpio_handler.py
-│   ├── main.py
+│   ├── upload_service.py   # HTTP upload + retry
+│   ├── ui.py               # Pygame display + status bar
 │   ├── models.py
-│   ├── sensor_service.py
-│   ├── ui.py
-│   ├── upload_service.py
 │   └── assets/
-│       ├── bad.png
-│       ├── bad.svg
-│       ├── empty.txt
-│       ├── good.png
-│       ├── good.svg
-│       ├── meh.png
-│       └── meh.svg
-└── server/
-    ├── __init__.py
-    ├── db.py
-    ├── main.py
-    ├── models.py
-    ├── schemas.py
-    └── routes/
-        ├── __init__.py
-        ├── ingest.py
-        └── summary.py
+├── server/
+│   ├── main.py             # FastAPI app (CORS enabled)
+│   ├── db.py
+│   ├── models.py
+│   ├── schemas.py
+│   ├── services/
+│   │   └── summary_service.py   # Calculation logic
+│   └── routes/
+│       ├── health.py       # GET /api/v1/health
+│       ├── ingest.py       # POST /api/v1/ingest/hourly
+│       └── summary.py      # Summary + history endpoints
+└── docs/
+    ├── architecture.md
+    ├── api.md              # API reference for website teammate
+    └── tailscale-setup.md
 ```
 
-## Quick setup (Raspberry Pi / target machine)
-
-Run `setup.sh` once to clone the repo into `~/Desktop/SIA_V2` and install everything.  
-Run it again at any time to update only changed files.
+## Quick setup (Raspberry Pi)
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/BoLibOde/SIA_V2/main/setup.sh)
 ```
 
-Or, if you already have the file locally:
-
+Or locally:
 ```bash
-chmod +x setup.sh
-./setup.sh
+chmod +x setup.sh && ./setup.sh
 ```
 
-The script will:
-1. Install required system packages (`git`, `python3`, `pygame`, etc.)
-2. Clone `BoLibOde/SIA_V2` into `~/Desktop/SIA_V2` (or pull the latest changes if already cloned)
-3. Install all Python dependencies from `requirements-device.txt` and `requirements-server.txt`
-4. Verify the repo state and report success or any missing files
-
-After setup, start the device app with:
-
+Start the device app:
 ```bash
+export SIA_SERVER_URL="http://<server-tailscale-ip>:8000"
 ~/Desktop/SIA_V2/.venv/bin/python -m device.main
 ```
 
-## Server run
+For development without hardware (simulated sensor, windowed mode):
+```bash
+export SIA_SIMULATION=true
+export SIA_FULLSCREEN=false
+python -m device.main
+```
 
-1. Create a virtual environment
-2. Install dependencies from `requirements-server.txt`
-3. Set `DATABASE_URL`
-4. Run:
+## Server setup
 
 ```bash
-uvicorn server.main:app --reload
+cd server
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-server.txt
+
+export DATABASE_URL="******localhost:5432/sia_v2"
+uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+API docs available at `http://localhost:8000/docs`.
+
+## Key API endpoints
+
+| Method | Path                                    | Description                        |
+|--------|-----------------------------------------|------------------------------------|
+| GET    | `/api/v1/health`                        | Server health check                |
+| POST   | `/api/v1/ingest/hourly`                 | Device uploads hourly aggregate    |
+| GET    | `/api/v1/devices/{id}/summary?range=day`| Mood summary for one device        |
+| GET    | `/api/v1/summary/global?range=day`      | Summary across all devices         |
+| GET    | `/api/v1/devices/{id}/history?hours=24` | Hourly history for charting        |
+
+See [`docs/api.md`](docs/api.md) for full request/response details.
+
+## Tailscale
+
+The device connects to the server over Tailscale. See [`docs/tailscale-setup.md`](docs/tailscale-setup.md).
+
+## Docs
+
+- [`docs/architecture.md`](docs/architecture.md) – component overview and data flow
+- [`docs/api.md`](docs/api.md) – API reference for the website teammate
+- [`docs/tailscale-setup.md`](docs/tailscale-setup.md) – Tailscale and prototype setup
+
