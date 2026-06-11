@@ -54,6 +54,7 @@ class HistoryEntrySchema(BaseModel):
     score: float
     smiley: str
     avg_temperature_c: float
+    avg_humidity_pct: float
     avg_co2_ppm: int
 
 

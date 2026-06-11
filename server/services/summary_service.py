@@ -142,6 +142,7 @@ def get_device_history(db: Session, device_id: str, hours: int) -> list[HistoryE
                 score=round(float(score), 3),
                 smiley=_score_to_smiley(score),
                 avg_temperature_c=row.avg_temperature_c,
+                avg_humidity_pct=row.avg_humidity_pct,
                 avg_co2_ppm=row.avg_co2_ppm,
             )
         )

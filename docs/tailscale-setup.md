@@ -41,7 +41,7 @@ You can also change it in `device/config.py` directly as the default value.
 ```bash
 cd ~/Desktop/SIA_V2
 source .venv/bin/activate
-export DATABASE_URL="******localhost:5432/sia_v2"
+export DATABASE_URL="<db-user>:<db-password>@localhost:5432/sia_v2"
 uvicorn server.main:app --host 0.0.0.0 --port 8000
 ```
 

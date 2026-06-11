@@ -106,7 +106,7 @@ class DeviceApp:
 
         success, status_msg = self.upload_service.upload_hourly_payload(payload)
         self._last_upload_status = f"{now.strftime('%H:%M')} {status_msg}"
-        self._server_connected = success or self._server_connected
+        self._server_connected = success
 
         if success:
             self.last_uploaded_hour = current_hour
