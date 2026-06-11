@@ -132,8 +132,12 @@ See [`docs/api.md`](docs/api.md) for full request/response details.
 
 The device connects to the server over Tailscale. See [`docs/tailscale-setup.md`](docs/tailscale-setup.md).
 
+For a complete, step-by-step deployment guide (systemd services, startup scripts, connectivity tests) see
+[`docs/deployment_tailscale.md`](docs/deployment_tailscale.md).
+
 ## Docs
 
 - [`docs/architecture.md`](docs/architecture.md) – component overview and data flow
 - [`docs/api.md`](docs/api.md) – API reference for the website teammate
 - [`docs/tailscale-setup.md`](docs/tailscale-setup.md) – Tailscale and prototype setup
+- [`docs/deployment_tailscale.md`](docs/deployment_tailscale.md) – full deployment guide (systemd, scripts, tests)

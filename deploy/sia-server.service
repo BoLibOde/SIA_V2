@@ -1,0 +1,17 @@
+[Unit]
+Description=SIA V2 FastAPI Server
+After=network.target postgresql.service tailscaled.service
+Wants=postgresql.service tailscaled.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/SIA_V2
+Environment="DATABASE_URL=******localhost:5432/sia_v2"
+ExecStart=/opt/SIA_V2/scripts/start_server.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
