@@ -23,8 +23,8 @@ class DeviceConfig:
     display_height: int = field(default_factory=lambda: int(os.getenv("SIA_DISPLAY_HEIGHT", "600")))
     fullscreen: bool = field(default_factory=lambda: _env_bool("SIA_FULLSCREEN", True))
 
-    # Tailscale / server connection – set SIA_SERVER_URL to the Tailscale IP or hostname
-    server_base_url: str = field(default_factory=lambda: os.getenv("SIA_SERVER_URL", "http://localhost:8000"))
+    # Tailscale / server connection – set SIA_SERVER_URL to override the Tailscale IP or hostname
+    server_base_url: str = field(default_factory=lambda: os.getenv("SIA_SERVER_URL", "http://100.74.7.35:8000"))
     upload_endpoint: str = field(default_factory=lambda: os.getenv("SIA_UPLOAD_ENDPOINT", "/api/v1/ingest/hourly"))
     health_endpoint: str = field(default_factory=lambda: os.getenv("SIA_HEALTH_ENDPOINT", "/api/v1/health"))
 

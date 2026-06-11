@@ -1,0 +1,19 @@
+[Unit]
+Description=SIA V2 Raspberry Pi Client
+After=network-online.target tailscaled.service graphical.target
+Wants=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/Desktop/SIA_V2
+Environment="PYTHONUNBUFFERED=1"
+Environment="DISPLAY=:0"
+Environment="XAUTHORITY=/home/pi/.Xauthority"
+ExecStart=/home/pi/Desktop/SIA_V2/scripts/start_client.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
