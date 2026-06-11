@@ -47,6 +47,20 @@ ALTER USER postgres WITH PASSWORD 'postgres';
 
 ### Install the systemd service
 
+Before installing the service, create the environment file that holds the database credentials.
+This file is only readable by root and the service user, keeping the password out of the service file itself.
+
+```bash
+sudo mkdir -p /etc/sia
+# Adjust the password if you chose a different one during PostgreSQL setup
+echo 'DATABASE_URL=postgresql://postgres:<your-password>@localhost:5432/sia_v2' \
+    | sudo tee /etc/sia/server.env > /dev/null
+sudo chmod 600 /etc/sia/server.env
+sudo chown root:root /etc/sia/server.env
+```
+
+Then install and enable the service:
+
 ```bash
 # Replace 'ubuntu' if your user is different
 sudo sed -i "s/^User=ubuntu/User=$(whoami)/" /opt/SIA_V2/deploy/sia-server.service
@@ -145,7 +159,7 @@ All device settings can be overridden via environment variables without editing 
 | `SIA_SIMULATION`      | `false`                      | Set to `true` for no-hardware dev        |
 | `SIA_FULLSCREEN`      | `true`                       | Set to `false` for windowed mode         |
 | `SIA_UPLOAD_TIMEOUT`  | `10`                         | HTTP timeout in seconds                  |
-| `DATABASE_URL`        | `******localhost:5432/sia_v2` | Server DB connection string |
+| `DATABASE_URL`        | *(set via `/etc/sia/server.env`)* | Server DB connection string |
 
 ---
 

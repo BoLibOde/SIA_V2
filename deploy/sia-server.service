@@ -8,7 +8,10 @@ Type=simple
 User=ubuntu
 Group=ubuntu
 WorkingDirectory=/opt/SIA_V2
-Environment="DATABASE_URL=******localhost:5432/sia_v2"
+# Load DATABASE_URL and other secrets from a protected env file.
+# Create /etc/sia/server.env (chmod 600, owned by the service user) with:
+#   DATABASE_URL=postgresql://<user>:<password>@localhost:5432/sia_v2
+EnvironmentFile=-/etc/sia/server.env
 ExecStart=/opt/SIA_V2/scripts/start_server.sh
 Restart=always
 RestartSec=5

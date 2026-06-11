@@ -1,6 +1,9 @@
 #!/bin/bash
 # start_server.sh -- start the SIA V2 FastAPI server on Ubuntu.
 # Uses /opt/SIA_V2 as the app directory.
+#
+# DATABASE_URL is read from the environment (set via systemd EnvironmentFile or exported
+# before calling this script).  The fallback below is used only when nothing else sets it.
 
 set -euo pipefail
 
