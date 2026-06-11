@@ -1,0 +1,14 @@
+[Unit]
+Description=SIA V2 Device App
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Desktop/SIA_V2
+ExecStart=/home/pi/Desktop/SIA_V2/.venv/bin/python -m device.main
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
