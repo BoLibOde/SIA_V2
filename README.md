@@ -57,7 +57,7 @@ export DATABASE_URL="postgresql://<db-user>:<db-password>@localhost:5432/sia_v2"
 ## Server-Setup
 
 ```bash
-cd /home/runner/work/SIA_V2/SIA_V2/BoLibOde/SIA_V2
+cd <project-root>
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-server.txt
@@ -140,7 +140,7 @@ python -m device.main
 
 ```bash
 pytest
-pytest -v
+pytest -v  # verbose output
 pytest tests/test_health.py
 ```
 
