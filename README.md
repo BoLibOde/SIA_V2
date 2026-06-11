@@ -10,9 +10,12 @@ SIA_V2/
 ├── setup.sh
 ├── requirements-device.txt
 ├── requirements-server.txt
+├── .github/workflows/
+│   ├── ci.yml
+│   └── deploy.yml
 ├── device/
 │   ├── config.py           # All settings, overridable via env vars
-│   ├── main.py             # Entry point
+│   ├── main.py             # Device entry point
 │   ├── gpio_handler.py     # Button input + debounce
 │   ├── sensor_service.py   # SCD41 sensor or simulation
 │   ├── aggregation_service.py
@@ -20,124 +23,145 @@ SIA_V2/
 │   ├── ui.py               # Pygame display + status bar
 │   ├── models.py
 │   └── assets/
-│       ├── bad.png
-│       ├── bad.svg
-│       ├── good.png
-│       ├── good.svg
-│       ├── meh.png
-│       └── meh.svg
-└── server/
-    ├── __init__.py
-    ├── db.py
-    ├── main.py             # FastAPI app (CORS enabled)
-    ├── models.py
-    ├── schemas.py
-    ├── services/
-    │   └── summary_service.py   # Calculation logic
-    └── routes/
-        ├── __init__.py
-        ├── health.py       # GET /api/v1/health
-        ├── ingest.py       # POST /api/v1/ingest/hourly + /live
-        ├── live.py         # Live dashboard endpoints
-        ├── locations.py    # Device location history
-        └── summary.py      # Summary + history endpoints
+├── server/
+│   ├── __init__.py
+│   ├── db.py
+│   ├── main.py             # FastAPI app (CORS enabled)
+│   ├── models.py
+│   ├── schemas.py
+│   ├── services/
+│   └── routes/
+├── docs/
+└── tests/
 ```
 
-## Quick setup (Raspberry Pi)
+## Voraussetzungen
+
+### Python
+- Python 3.11 oder neuer empfohlen
+- optional ein virtuelles Environment (`python -m venv .venv`)
+
+### Server
+- PostgreSQL muss erreichbar sein
+- `DATABASE_URL` muss gesetzt sein, z. B.:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/BoLibOde/SIA_V2/main/setup.sh)
+export DATABASE_URL="postgresql://DB_USER:DB_PASSWORD@localhost:5432/sia_v2"
 ```
 
-Or locally:
+### Raspberry Pi / Device
+- Raspberry Pi OS / Linux mit Python 3
+- optional Sensor-/GPIO-Hardware
+- für die Verbindung zum Server typischerweise Tailscale
+
+## Server-Setup
+
 ```bash
-chmod +x setup.sh && ./setup.sh
+cd /path/to/SIA_V2
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-server.txt
+export DATABASE_URL="postgresql://DB_USER:DB_PASSWORD@localhost:5432/sia_v2"
 ```
 
-Start the device app:
+Weiterführende Doku:
+- [`docs/api.md`](docs/api.md)
+- [`docs/architecture.md`](docs/architecture.md)
+- [`docs/tailscale-setup.md`](docs/tailscale-setup.md)
+- [`docs/deployment_tailscale.md`](docs/deployment_tailscale.md)
+
+## Server starten
+
+Entwicklungsstart mit Reload:
+
 ```bash
-export SIA_SERVER_URL="http://<server-tailscale-ip>:8000"
-~/Desktop/SIA_V2/.venv/bin/python -m device.main
+uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-For development without hardware (simulated sensor, windowed mode):
+Start ohne Reload:
+
 ```bash
+uvicorn server.main:app --host 0.0.0.0 --port 8000
+```
+
+Danach erreichbar unter:
+- Root: `http://localhost:8000/`
+- Health: `http://localhost:8000/api/v1/health`
+- API-Doku: `http://localhost:8000/docs`
+
+## Raspberry-Pi-/Device-Setup
+
+Mit dem vorhandenen Setup-Skript:
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+Oder manuell:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-device.txt
+```
+
+Beispiel für die Server-URL des Devices:
+
+```bash
+export SIA_SERVER_URL="http://100.x.y.z:8000"
+```
+
+## Hauptprogramm auf dem Raspberry Pi starten
+
+```bash
+cd /home/pi/Desktop/SIA_V2
+source .venv/bin/activate
+export SIA_SERVER_URL="http://100.x.y.z:8000"
+python -m device.main
+```
+
+## Hauptprogramm lokal ohne Hardware / im Simulationsmodus starten
+
+```bash
+cd /path/to/SIA_V2
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-device.txt
+export SIA_SERVER_URL="http://localhost:8000"
 export SIA_SIMULATION=true
 export SIA_FULLSCREEN=false
 python -m device.main
 ```
 
-## Server setup
+## Tests ausführen
+
+Server-Testabhängigkeiten installieren:
 
 ```bash
-cd server
-python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-server.txt
-
-export DATABASE_URL="******localhost:5432/sia_v2"
-uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-API docs available at `http://localhost:8000/docs`.
+Tests starten:
 
-## Backend data model
+```bash
+pytest
+pytest -v
+pytest tests/test_health.py
+```
 
-- `hourly_uploads` – historical base data (hourly rollups)
-- `device_live_states` – latest live values + today counters for dashboard
-- `device_locations` – location history with `valid_from` / `valid_to`
+## Kurzcheck für manuelle Prüfung
 
-Location history keeps old data correct when a device moves between rooms.
+- Server startet ohne Fehler mit gesetzter `DATABASE_URL`
+- `GET /` liefert Status `ok` und Service `sia-v2-api`
+- `GET /api/v1/health` liefert Status `ok` und einen `timestamp`
+- `http://localhost:8000/docs` ist erreichbar
+- Device erreicht den Server mit gesetzter `SIA_SERVER_URL`
+- Simulationsmodus startet lokal ohne Hardware mit `SIA_SIMULATION=true`
 
-## Key API endpoints
+## Weitere Dokumentation
 
-### Health
-
-| Method | Path               | Description          |
-|--------|--------------------|----------------------|
-| GET    | `/api/v1/health`   | Server health check  |
-
-### Ingest
-
-| Method | Path                      | Description                      |
-|--------|---------------------------|----------------------------------|
-| POST   | `/api/v1/ingest/hourly`   | Device uploads hourly aggregate  |
-| POST   | `/api/v1/ingest/live`     | Device pushes live state         |
-
-### Live dashboard
-
-| Method | Path                              | Description                  |
-|--------|-----------------------------------|------------------------------|
-| GET    | `/api/v1/live`                    | All devices live dashboard   |
-| GET    | `/api/v1/devices/{id}/live`       | Single device live state     |
-| GET    | `/api/v1/devices/{id}/today`      | Today's counts for a device  |
-
-### Location history
-
-| Method | Path                               | Description                         |
-|--------|------------------------------------|-------------------------------------|
-| POST   | `/api/v1/devices/{id}/location`    | Assign location with valid_from     |
-| GET    | `/api/v1/devices/{id}/locations`   | Get location history                |
-
-### Historical summary (for website)
-
-| Method | Path                                    | Description                               |
-|--------|-----------------------------------------|-------------------------------------------|
-| GET    | `/api/v1/summary`                       | Flexible summary with filter + group_by   |
-| GET    | `/api/v1/devices/{id}/summary`          | Per-device summary (legacy)               |
-| GET    | `/api/v1/devices/{id}/history?hours=24` | Hourly history for charting               |
-
-See [`docs/api.md`](docs/api.md) for full request/response details.
-
-## Tailscale
-
-The device connects to the server over Tailscale. See [`docs/tailscale-setup.md`](docs/tailscale-setup.md).
-
-For a complete, step-by-step deployment guide (systemd services, startup scripts, connectivity tests) see
-[`docs/deployment_tailscale.md`](docs/deployment_tailscale.md).
-
-## Docs
-
-- [`docs/architecture.md`](docs/architecture.md) – component overview and data flow
-- [`docs/api.md`](docs/api.md) – API reference for the website teammate
-- [`docs/tailscale-setup.md`](docs/tailscale-setup.md) – Tailscale and prototype setup
-- [`docs/deployment_tailscale.md`](docs/deployment_tailscale.md) – full deployment guide (systemd, scripts, tests)
+- [`docs/api.md`](docs/api.md) – API-Referenz
+- [`docs/architecture.md`](docs/architecture.md) – Architekturüberblick
+- [`docs/tailscale-setup.md`](docs/tailscale-setup.md) – Tailscale-Einrichtung
+- [`docs/deployment_tailscale.md`](docs/deployment_tailscale.md) – Deployment mit systemd/Tailscale
