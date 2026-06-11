@@ -4,8 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from server.db import get_db
-from server.models import Device, HourlyUpload
-from server.schemas import HourlyUploadRequest, HourlyUploadResponse
+from server.models import Device, DeviceLiveState, HourlyUpload
+from server.schemas import (
+    HourlyUploadRequest,
+    HourlyUploadResponse,
+    LiveIngestRequest,
+    LiveStateResponse,
+    MoodCountsSchema,
+)
 
 
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
@@ -54,3 +60,52 @@ def ingest_hourly(payload: HourlyUploadRequest, db: Session = Depends(get_db)) -
     db.commit()
 
     return HourlyUploadResponse(status="ok", stored=True)
+
+
+@router.post("/live", response_model=LiveStateResponse)
+def ingest_live(payload: LiveIngestRequest, db: Session = Depends(get_db)) -> LiveStateResponse:
+    event_time = payload.timestamp or datetime.utcnow()
+
+    device = db.query(Device).filter(Device.device_id == payload.device_id).first()
+    if device is None:
+        device = Device(
+            device_id=payload.device_id,
+            created_at=datetime.utcnow(),
+        )
+        db.add(device)
+        db.flush()
+
+    live_state = db.query(DeviceLiveState).filter(DeviceLiveState.device_id == device.id).first()
+    if live_state is None:
+        live_state = DeviceLiveState(device_id=device.id)
+        db.add(live_state)
+
+    live_state.last_seen_at = event_time
+    live_state.latest_mood = payload.latest_mood
+    live_state.today_good_count = payload.today_counts.good
+    live_state.today_neutral_count = payload.today_counts.neutral
+    live_state.today_bad_count = payload.today_counts.bad
+    live_state.latest_temperature_c = payload.sensor_current.temperature_c
+    live_state.latest_humidity_pct = payload.sensor_current.humidity_pct
+    live_state.latest_co2_ppm = payload.sensor_current.co2_ppm
+    live_state.updated_at = datetime.utcnow()
+
+    device.last_seen_at = event_time
+    db.commit()
+
+    return LiveStateResponse(
+        device_id=device.device_id,
+        location=device.location,
+        last_seen_at=live_state.last_seen_at,
+        latest_mood=live_state.latest_mood,
+        today_counts=MoodCountsSchema(
+            good=live_state.today_good_count,
+            neutral=live_state.today_neutral_count,
+            bad=live_state.today_bad_count,
+        ),
+        sensor_current={
+            "temperature_c": live_state.latest_temperature_c,
+            "humidity_pct": live_state.latest_humidity_pct,
+            "co2_ppm": live_state.latest_co2_ppm,
+        },
+    )
