@@ -2,6 +2,13 @@
 
 Clean rebuild of the SIA mood bar-o-meter project.
 
+## Architektur in Kürze
+
+- PostgreSQL / SQL ist die zentrale Source of Truth.
+- Devices senden Rohdaten und Live-Feed an den Server.
+- Speicherung, Filterung, Historie, Aggregation und Auswertung passieren serverseitig über SQL.
+- JSON ist höchstens noch ein lokaler Retry-/Offline-Puffer auf dem Device, nicht das fachliche Hauptsystem.
+
 ## Repository structure
 
 ```text
@@ -20,124 +27,135 @@ SIA_V2/
 │   ├── ui.py               # Pygame display + status bar
 │   ├── models.py
 │   └── assets/
-│       ├── bad.png
-│       ├── bad.svg
-│       ├── good.png
-│       ├── good.svg
-│       ├── meh.png
-│       └── meh.svg
 └── server/
     ├── __init__.py
     ├── db.py
-    ├── main.py             # FastAPI app (CORS enabled)
+    ├── main.py
     ├── models.py
     ├── schemas.py
     ├── services/
-    │   └── summary_service.py   # Calculation logic
     └── routes/
-        ├── __init__.py
-        ├── health.py       # GET /api/v1/health
-        ├── ingest.py       # POST /api/v1/ingest/hourly + /live
-        ├── live.py         # Live dashboard endpoints
-        ├── locations.py    # Device location history
-        └── summary.py      # Summary + history endpoints
 ```
 
-## Quick setup (Raspberry Pi)
+## Voraussetzungen
+
+### Python
+- Python 3.11 empfohlen für Server und CI
+- Python 3.x auf dem Raspberry Pi / Device
+- optional: virtuelles Environment (`.venv`)
+
+### Datenbank
+- PostgreSQL als zentrale relationale Datenbank
+- `DATABASE_URL` muss auf die Server-Datenbank zeigen
+
+Beispiel:
+
+```bash
+export DATABASE_URL="postgresql://<db-user>:<db-password>@localhost:5432/sia_v2"
+```
+
+## Server-Setup
+
+```bash
+cd /home/runner/work/SIA_V2/SIA_V2/BoLibOde/SIA_V2
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-server.txt
+export DATABASE_URL="postgresql://<db-user>:<db-password>@localhost:5432/sia_v2"
+```
+
+## Server starten
+
+### Entwicklung
+
+```bash
+uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Ohne Reload
+
+```bash
+uvicorn server.main:app --host 0.0.0.0 --port 8000
+```
+
+Danach sind die wichtigsten Endpunkte erreichbar:
+
+- Root: `http://localhost:8000/`
+- Health: `http://localhost:8000/api/v1/health`
+- API-Doku: `http://localhost:8000/docs`
+
+## Raspberry-Pi- / Device-Setup
+
+### Automatisch mit Setup-Skript
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+### Alternativ per Remote-Setup
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/BoLibOde/SIA_V2/main/setup.sh)
 ```
 
-Or locally:
+Vor dem Start mindestens die Server-URL setzen:
+
 ```bash
-chmod +x setup.sh && ./setup.sh
+export SIA_SERVER_URL="http://localhost:8000"
 ```
 
-Start the device app:
+Bei Nutzung über Tailnet stattdessen z. B.:
+
 ```bash
-export SIA_SERVER_URL="http://<server-tailscale-ip>:8000"
-~/Desktop/SIA_V2/.venv/bin/python -m device.main
+export SIA_SERVER_URL="http://100.74.7.35:8000"
 ```
 
-For development without hardware (simulated sensor, windowed mode):
+## Hauptprogramm auf dem Raspberry Pi starten
+
 ```bash
+python -m device.main
+```
+
+Das Device sendet nur Rohdaten und Live-Feed an den Server. Speicherung und Auswertung erfolgen serverseitig in PostgreSQL/SQL.
+
+## Hauptprogramm lokal ohne Hardware / im Simulationsmodus starten
+
+```bash
+export SIA_SERVER_URL="http://localhost:8000"
 export SIA_SIMULATION=true
 export SIA_FULLSCREEN=false
 python -m device.main
 ```
 
-## Server setup
+## Datenfluss
+
+- Device sammelt Button- und Sensorwerte.
+- Device lädt Rohdaten und Live-Feed zum Server hoch.
+- Server speichert die Daten in PostgreSQL.
+- Historie, Filterung und Aggregation laufen serverseitig per SQL.
+- JSON-Dateien sind nur optional für lokale Retry-/Offline-Fälle gedacht.
+
+## Tests ausführen
 
 ```bash
-cd server
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-server.txt
-
-export DATABASE_URL="******localhost:5432/sia_v2"
-uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
+pytest
+pytest -v
+pytest tests/test_health.py
 ```
 
-API docs available at `http://localhost:8000/docs`.
+## Manuell prüfen
 
-## Backend data model
+- Server startet mit gesetzter `DATABASE_URL` ohne Fehler.
+- `GET /` liefert `status=ok` und `service=sia-v2-api`.
+- `GET /api/v1/health` liefert `status=ok` und einen Timestamp.
+- `http://localhost:8000/docs` ist erreichbar.
+- Device kann mit gesetzter `SIA_SERVER_URL` starten.
+- Simulationsmodus funktioniert mit `SIA_SIMULATION=true`.
 
-- `hourly_uploads` – historical base data (hourly rollups)
-- `device_live_states` – latest live values + today counters for dashboard
-- `device_locations` – location history with `valid_from` / `valid_to`
+## Weiterführende Dokumentation
 
-Location history keeps old data correct when a device moves between rooms.
-
-## Key API endpoints
-
-### Health
-
-| Method | Path               | Description          |
-|--------|--------------------|----------------------|
-| GET    | `/api/v1/health`   | Server health check  |
-
-### Ingest
-
-| Method | Path                      | Description                      |
-|--------|---------------------------|----------------------------------|
-| POST   | `/api/v1/ingest/hourly`   | Device uploads hourly aggregate  |
-| POST   | `/api/v1/ingest/live`     | Device pushes live state         |
-
-### Live dashboard
-
-| Method | Path                              | Description                  |
-|--------|-----------------------------------|------------------------------|
-| GET    | `/api/v1/live`                    | All devices live dashboard   |
-| GET    | `/api/v1/devices/{id}/live`       | Single device live state     |
-| GET    | `/api/v1/devices/{id}/today`      | Today's counts for a device  |
-
-### Location history
-
-| Method | Path                               | Description                         |
-|--------|------------------------------------|-------------------------------------|
-| POST   | `/api/v1/devices/{id}/location`    | Assign location with valid_from     |
-| GET    | `/api/v1/devices/{id}/locations`   | Get location history                |
-
-### Historical summary (for website)
-
-| Method | Path                                    | Description                               |
-|--------|-----------------------------------------|-------------------------------------------|
-| GET    | `/api/v1/summary`                       | Flexible summary with filter + group_by   |
-| GET    | `/api/v1/devices/{id}/summary`          | Per-device summary (legacy)               |
-| GET    | `/api/v1/devices/{id}/history?hours=24` | Hourly history for charting               |
-
-See [`docs/api.md`](docs/api.md) for full request/response details.
-
-## Tailscale
-
-The device connects to the server over Tailscale. See [`docs/tailscale-setup.md`](docs/tailscale-setup.md).
-
-For a complete, step-by-step deployment guide (systemd services, startup scripts, connectivity tests) see
-[`docs/deployment_tailscale.md`](docs/deployment_tailscale.md).
-
-## Docs
-
-- [`docs/architecture.md`](docs/architecture.md) – component overview and data flow
-- [`docs/api.md`](docs/api.md) – API reference for the website teammate
-- [`docs/tailscale-setup.md`](docs/tailscale-setup.md) – Tailscale and prototype setup
-- [`docs/deployment_tailscale.md`](docs/deployment_tailscale.md) – full deployment guide (systemd, scripts, tests)
+- [`docs/api.md`](docs/api.md)
+- [`docs/architecture.md`](docs/architecture.md)
+- [`docs/tailscale-setup.md`](docs/tailscale-setup.md)
+- [`docs/deployment_tailscale.md`](docs/deployment_tailscale.md)

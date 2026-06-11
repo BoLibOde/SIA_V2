@@ -1,4 +1,3 @@
-#ich teste gerade nur den deploy zum zweiten mal
 import time
 from datetime import datetime
 
@@ -119,4 +118,3 @@ class DeviceApp:
 if __name__ == "__main__":
     app = DeviceApp()
     app.run()
-

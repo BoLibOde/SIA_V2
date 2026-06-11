@@ -19,10 +19,18 @@ Raspberry Pi (device/)          Server (server/)          Website (teammate)
 
 1. Buttons on the device increment local mood counters.
 2. The SCD41 sensor is read every few seconds and buffered.
-3. Once per hour the device builds an `HourlyUploadPayload` and POSTs it to the server.
-4. Failed uploads are saved to `pending_uploads.json` and retried automatically.
-5. The server stores each upload in PostgreSQL.
-6. The website polls the summary/history endpoints to display charts and current status.
+3. The device uploads raw hourly measurements and live-feed data to the server.
+4. The server stores those uploads in PostgreSQL, which is the central source of truth.
+5. Aggregation, filtering, history queries, and summaries are calculated server-side via SQL.
+6. JSON files are optional only as a local retry/offline buffer on the device (for example `pending_uploads.json`).
+7. The website polls the server endpoints to display charts, live status, and historical views.
+
+## Architecture decision: SQL over JSON filters
+
+- PostgreSQL / SQL is the primary business data system for SIA V2.
+- Devices are intentionally kept simple: they collect button/sensor inputs and send raw data plus live-feed updates.
+- The server is responsible for persistence, filtering, aggregation, and historical evaluation.
+- JSON must not be treated as the main analytical data store; it is only acceptable as a temporary local retry buffer when the device is offline or an upload fails.
 
 ## Directory layout
 
