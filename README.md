@@ -46,7 +46,7 @@ SIA_V2/
 - `DATABASE_URL` muss gesetzt sein, z. B.:
 
 ```bash
-export DATABASE_URL="******localhost:5432/sia_v2"
+export DATABASE_URL="postgresql://DB_USER:DB_PASSWORD@localhost:5432/sia_v2"
 ```
 
 ### Raspberry Pi / Device
@@ -57,11 +57,11 @@ export DATABASE_URL="******localhost:5432/sia_v2"
 ## Server-Setup
 
 ```bash
-cd /home/runner/work/SIA_V2/SIA_V2/BoLibOde/SIA_V2
+cd /path/to/SIA_V2
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-server.txt
-export DATABASE_URL="******localhost:5432/sia_v2"
+export DATABASE_URL="postgresql://DB_USER:DB_PASSWORD@localhost:5432/sia_v2"
 ```
 
 Weiterführende Doku:
@@ -124,7 +124,7 @@ python -m device.main
 ## Hauptprogramm lokal ohne Hardware / im Simulationsmodus starten
 
 ```bash
-cd /home/runner/work/SIA_V2/SIA_V2/BoLibOde/SIA_V2
+cd /path/to/SIA_V2
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-device.txt
