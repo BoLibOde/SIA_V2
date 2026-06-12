@@ -69,7 +69,8 @@ jobs:
           script: |
             set -e
             cd ~/Desktop/SIA_V2
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
 
             # Update dependencies
             if [ -f requirements-device.txt ] && [ -x .venv/bin/pip ]; then
