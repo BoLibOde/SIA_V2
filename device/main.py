@@ -118,4 +118,3 @@ class DeviceApp:
 if __name__ == "__main__":
     app = DeviceApp()
     app.run()
-
