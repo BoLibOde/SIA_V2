@@ -57,6 +57,7 @@ class DeviceApp:
             while self.running:
                 now = datetime.utcnow()
                 latest = self.sensor_service.get_latest_reading()
+                self.gpio_handler.update()
                 hourly_counts = self.gpio_handler.get_hourly_counts()
 
                 if not self.ui.handle_events():

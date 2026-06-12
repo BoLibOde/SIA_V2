@@ -16,7 +16,7 @@ SIA_V2/
 ├── device/
 │   ├── config.py           # All settings, overridable via env vars
 │   ├── main.py             # Device entry point
-│   ├── gpio_handler.py     # Button input + debounce
+│   ├── gpio_handler.py     # Button input + debounce (polling-based)
 │   ├── sensor_service.py   # SCD41 sensor or simulation
 │   ├── aggregation_service.py
 │   ├── upload_service.py   # HTTP upload + retry
@@ -31,6 +31,10 @@ SIA_V2/
 │   ├── schemas.py
 │   ├── services/
 │   └── routes/
+├── scripts/
+│   ├── start_client.sh     # Auto-install deps and start device
+│   ├── start_server.sh     # Start server
+│   └── run_device.sh       # Stop service, then run device manually (Pi)
 ├── docs/
 └── tests/
 ```
@@ -46,7 +50,7 @@ SIA_V2/
 - `DATABASE_URL` muss gesetzt sein, z. B.:
 
 ```bash
-export DATABASE_URL="postgresql://DB_USER:DB_PASSWORD@localhost:5432/sia_v2"
+export DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/sia_v2"
 ```
 
 ### Raspberry Pi / Device
@@ -57,11 +61,11 @@ export DATABASE_URL="postgresql://DB_USER:DB_PASSWORD@localhost:5432/sia_v2"
 ## Server-Setup
 
 ```bash
-cd /path/to/SIA_V2
+cd ~/SIA_web
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-server.txt
-export DATABASE_URL="postgresql://DB_USER:DB_PASSWORD@localhost:5432/sia_v2"
+export DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/sia_v2"
 ```
 
 Weiterführende Doku:
@@ -85,9 +89,9 @@ uvicorn server.main:app --host 0.0.0.0 --port 8000
 ```
 
 Danach erreichbar unter:
-- Root: `http://localhost:8000/`
-- Health: `http://localhost:8000/api/v1/health`
-- API-Doku: `http://localhost:8000/docs`
+- Root: `http://100.74.7.35:8000/`
+- Health: `http://100.74.7.35:8000/api/v1/health`
+- API-Doku: `http://100.74.7.35:8000/docs`
 
 ## Raspberry-Pi-/Device-Setup
 
@@ -101,27 +105,55 @@ chmod +x setup.sh
 Oder manuell:
 
 ```bash
+cd /home/ebm/Desktop/SIA_V2
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-device.txt
 ```
 
-Beispiel für die Server-URL des Devices:
+## Device auf dem Raspberry Pi starten (manuell / für Tests)
+
+> **Hinweis:** Falls das Device als systemd-Dienst läuft, diesen zuerst stoppen:
+>
+> ```bash
+> sudo systemctl stop sia-device
+> ```
+
+Dann manuell starten:
 
 ```bash
-export SIA_SERVER_URL="http://100.x.y.z:8000"
-```
-
-## Hauptprogramm auf dem Raspberry Pi starten
-
-```bash
-cd /home/pi/Desktop/SIA_V2
+cd /home/ebm/Desktop/SIA_V2
 source .venv/bin/activate
-export SIA_SERVER_URL="http://100.x.y.z:8000"
+export SIA_SERVER_URL="http://100.74.7.35:8000"
 python -m device.main
 ```
 
-## Hauptprogramm lokal ohne Hardware / im Simulationsmodus starten
+Oder per Hilfsskript (stoppt den Dienst automatisch):
+
+```bash
+bash /home/ebm/Desktop/SIA_V2/scripts/run_device.sh
+```
+
+## Button-Belegung (BCM-Nummern)
+
+| Funktion | BCM-Pin | Physischer Pin |
+|----------|---------|----------------|
+| Gut      | 27      | 13             |
+| Neutral  | 22      | 15             |
+| Schlecht | 17      | 11             |
+
+Alle drei Pins sind als Eingänge mit internem Pull-up konfiguriert.
+Ein Knopfdruck schließt den Pin auf GND (LOW-Signal).
+
+Überschreiben via Umgebungsvariablen:
+
+```bash
+export SIA_GOOD_PIN=27
+export SIA_NEUTRAL_PIN=22
+export SIA_BAD_PIN=17
+```
+
+## Simulationsmodus (lokal, ohne Hardware)
 
 ```bash
 cd /path/to/SIA_V2
@@ -155,9 +187,28 @@ pytest tests/test_health.py
 - Server startet ohne Fehler mit gesetzter `DATABASE_URL`
 - `GET /` liefert Status `ok` und Service `sia-v2-api`
 - `GET /api/v1/health` liefert Status `ok` und einen `timestamp`
-- `http://localhost:8000/docs` ist erreichbar
+- `http://100.74.7.35:8000/docs` ist erreichbar
 - Device erreicht den Server mit gesetzter `SIA_SERVER_URL`
 - Simulationsmodus startet lokal ohne Hardware mit `SIA_SIMULATION=true`
+
+## Troubleshooting
+
+### `RuntimeError: Failed to add edge detection` / GPIO add_event_detect schlägt fehl
+
+Auf manchen Raspberry Pi 3 Model B Geräten schlägt `RPi.GPIO.add_event_detect()`
+auf allen Pins fehl. Das Device verwendet daher **Polling** statt Interrupts:
+In jedem Loop-Durchgang wird `gpio_handler.update()` aufgerufen, das HIGH→LOW-
+Übergänge an den Button-Pins erkennt und Entprellung (`debounce`) intern umsetzt.
+Der `bouncetime`-Parameter aus der alten Interrupt-Variante entfällt dadurch.
+
+### Dienst läuft bereits / Fehlermeldung beim manuellen Start
+
+Wenn das Device als systemd-Dienst (`sia-device`) konfiguriert ist, muss dieser
+vor einem manuellen `python -m device.main` gestoppt werden:
+
+```bash
+sudo systemctl stop sia-device
+```
 
 ## Weitere Dokumentation
 
