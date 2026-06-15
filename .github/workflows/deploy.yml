@@ -3,7 +3,7 @@ name: Deploy to Ubuntu Server via Tailscale
 on:
   push:
     branches:
-      - main   # ggf. anpassen, falls dein Haupt-Branch anders heißt (z.B. master)
+      - main
 
 jobs:
   deploy:
@@ -13,42 +13,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1) Mit deinem Tailnet verbinden (Tailscale)
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-          # optional: caching beschleunigt spätere Läufe
           use-cache: true
 
-      # 2) Deploy auf den Server über Tailscale-SSH
-      - name: Deploy via SSH over Tailscale
+      - name: Deploy website and refresh database via SSH over Tailscale
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 100.74.7.35           # HIER: Tailscale-IP deiner Ubuntu-VM eintragen
+          host: 100.74.7.35
           username: deploy
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           script: |
+            set -e
             cd /home/deploy/SIA-web
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
 
-            # Virtualenv + requirements-server.txt (optional, aber praktisch)
-            if [ -f requirements-server.txt ]; then
-              python3 -m venv venv || true
-              . venv/bin/activate
-              pip install -r requirements-server.txt
-              deactivate
+            chmod +x scripts/refresh_database.sh scripts/deploy_website.sh
+            sudo bash scripts/refresh_database.sh
+
+            if [ ! -f /var/www/html/stimmungsbarometer/db.local.php ]; then
+              sudo mkdir -p /var/www/html/stimmungsbarometer
+              sudo cp server/WEBSITE/db.local.example.php /var/www/html/stimmungsbarometer/db.local.php
+              echo 'Created /var/www/html/stimmungsbarometer/db.local.php from example. Update the password on the server.'
             fi
 
-            # Service neu starten
-            sudo systemctl restart sia-web || systemctl restart sia-web
+            sudo bash scripts/deploy_website.sh
 
   deploy-device:
     runs-on: ubuntu-latest
-    needs: deploy   # starts only after server deployment succeeds
+    needs: deploy
 
     steps:
       - name: Connect to Tailscale
@@ -72,10 +71,8 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
-            # Update dependencies
             if [ -f requirements-device.txt ] && [ -x .venv/bin/pip ]; then
               .venv/bin/pip install --quiet -r requirements-device.txt
             fi
 
-            # Restart device service
             sudo systemctl restart sia-device
