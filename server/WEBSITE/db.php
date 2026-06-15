@@ -1,4 +1,4 @@
-db.php<?php
+<?php
 date_default_timezone_set('Europe/Berlin');
 
 $defaults = [
