@@ -22,7 +22,11 @@ sudo find "$DEST" -type d -exec chmod 755 {} \;
 sudo find "$DEST" -type f -exec chmod 644 {} \;
 sudo chown -R www-data:www-data "$DEST"
 
-echo "[web] Reloading Apache"
-sudo systemctl reload apache2
+echo "[web] Reloading nginx"
+if systemctl is-active --quiet nginx; then
+  sudo systemctl reload nginx
+else
+  sudo systemctl start nginx
+fi
 
 echo "[web] Website deploy completed"
