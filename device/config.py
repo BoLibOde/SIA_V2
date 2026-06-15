@@ -12,12 +12,12 @@ def _env_bool(name: str, default: bool) -> bool:
 @dataclass(frozen=True)
 class DeviceConfig:
     device_id: str = field(default_factory=lambda: os.getenv("SIA_DEVICE_ID", "pi-room-01"))
-    good_button_pin: int = field(default_factory=lambda: int(os.getenv("SIA_GOOD_PIN", "17")))
-    neutral_button_pin: int = field(default_factory=lambda: int(os.getenv("SIA_NEUTRAL_PIN", "27")))
-    bad_button_pin: int = field(default_factory=lambda: int(os.getenv("SIA_BAD_PIN", "22")))
+    good_button_pin: int = field(default_factory=lambda: int(os.getenv("SIA_GOOD_PIN", "27")))
+    neutral_button_pin: int = field(default_factory=lambda: int(os.getenv("SIA_NEUTRAL_PIN", "22")))
+    bad_button_pin: int = field(default_factory=lambda: int(os.getenv("SIA_BAD_PIN", "17")))
 
     sensor_interval_seconds: int = field(default_factory=lambda: int(os.getenv("SIA_SENSOR_INTERVAL", "5")))
-    ui_refresh_seconds: int = field(default_factory=lambda: int(os.getenv("SIA_UI_REFRESH", "1")))
+    ui_refresh_seconds: float = field(default_factory=lambda: float(os.getenv("SIA_UI_REFRESH", "0.05")))
 
     display_width: int = field(default_factory=lambda: int(os.getenv("SIA_DISPLAY_WIDTH", "1024")))
     display_height: int = field(default_factory=lambda: int(os.getenv("SIA_DISPLAY_HEIGHT", "600")))

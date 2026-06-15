@@ -27,16 +27,36 @@ class GpioHandler:
             "bad": 0.0,
         }
         self.current_hour_key = self._hour_key(datetime.utcnow())
+        # Track previous pin state for HIGH->LOW transition detection
+        self._prev_state: dict[str, int] = {}
 
     def start(self) -> None:
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(self.good_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         GPIO.setup(self.neutral_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         GPIO.setup(self.bad_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        # Read initial states so first poll doesn't trigger a false press
+        self._prev_state = {
+            "good": GPIO.input(self.good_pin),
+            "neutral": GPIO.input(self.neutral_pin),
+            "bad": GPIO.input(self.bad_pin),
+        }
 
-        GPIO.add_event_detect(self.good_pin, GPIO.FALLING, callback=self._good_pressed, bouncetime=200)
-        GPIO.add_event_detect(self.neutral_pin, GPIO.FALLING, callback=self._neutral_pressed, bouncetime=200)
-        GPIO.add_event_detect(self.bad_pin, GPIO.FALLING, callback=self._bad_pressed, bouncetime=200)
+    def update(self) -> None:
+        """Poll pins and register presses on HIGH->LOW transitions."""
+        pins = {
+            "good": self.good_pin,
+            "neutral": self.neutral_pin,
+            "bad": self.bad_pin,
+        }
+        self._roll_hour_if_needed()
+        for mood, pin in pins.items():
+            current = GPIO.input(pin)
+            if self._prev_state.get(mood, GPIO.HIGH) == GPIO.HIGH and current == GPIO.LOW:
+                if self._can_press(mood):
+                    setattr(self.total_counts, mood, getattr(self.total_counts, mood) + 1)
+                    setattr(self.hourly_counts, mood, getattr(self.hourly_counts, mood) + 1)
+            self._prev_state[mood] = current
 
     def stop(self) -> None:
         GPIO.cleanup()
@@ -76,21 +96,3 @@ class GpioHandler:
             return False
         self.last_pressed[mood] = now
         return True
-
-    def _good_pressed(self, channel: int) -> None:
-        self._roll_hour_if_needed()
-        if self._can_press("good"):
-            self.total_counts.good += 1
-            self.hourly_counts.good += 1
-
-    def _neutral_pressed(self, channel: int) -> None:
-        self._roll_hour_if_needed()
-        if self._can_press("neutral"):
-            self.total_counts.neutral += 1
-            self.hourly_counts.neutral += 1
-
-    def _bad_pressed(self, channel: int) -> None:
-        self._roll_hour_if_needed()
-        if self._can_press("bad"):
-            self.total_counts.bad += 1
-            self.hourly_counts.bad += 1
