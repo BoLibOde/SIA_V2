@@ -91,14 +91,13 @@ class DeviceApp:
                         status_updated = True
                     else:
                         for mood in live_events:
-                            event_time = datetime.now(UTC)
-                            success, status_msg = self.upload_service.upload_live_event(mood, latest, event_time)
+                            success, status_msg = self.upload_service.upload_live_event(mood, latest, now)
                             self._server_connected = success
                             if success:
-                                self._set_upload_status(event_time, f"Live: {mood} {status_msg}")
+                                self._set_upload_status(now, f"Live: {mood} {status_msg}")
                             else:
                                 self._set_upload_status(
-                                    event_time,
+                                    now,
                                     f"Live fehlgeschlagen (gepuffert): {mood} {status_msg}",
                                 )
                             status_updated = True
