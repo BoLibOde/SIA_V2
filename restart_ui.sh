@@ -22,7 +22,7 @@ if pgrep -f "python -m device.main" >/dev/null 2>&1; then
 fi
 
 if pgrep -f "python -m device.main" >/dev/null 2>&1; then
-    echo "Could not stop existing device.main process cleanly after $checks checks." >&2
+    echo "Could not stop existing device.main process cleanly after $MAX_STOP_CHECKS checks." >&2
     exit 1
 fi
 
