@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Erstellungszeit: 15. Jun 2026 um 20:14
+-- Erstellungszeit: 16. Jun 2026 um 17:18
 -- Server-Version: 10.4.32-MariaDB
 -- PHP-Version: 8.2.12
 
@@ -20,6 +20,30 @@ SET time_zone = "+00:00";
 --
 -- Datenbank: `stimmungsbarometer`
 --
+
+-- --------------------------------------------------------
+
+--
+-- Tabellenstruktur für Tabelle `device_location_history`
+--
+
+CREATE TABLE `device_location_history` (
+  `id` int(11) NOT NULL,
+  `location_id` int(11) NOT NULL,
+  `valid_from` datetime NOT NULL,
+  `changed_by` int(11) DEFAULT NULL,
+  `note` varchar(255) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Daten für Tabelle `device_location_history`
+--
+
+INSERT INTO `device_location_history` (`id`, `location_id`, `valid_from`, `changed_by`, `note`, `created_at`) VALUES
+(1, 1, '2026-06-16 16:14:19', 1, 'Erster Standort des Geräts', '2026-06-16 16:14:19'),
+(2, 9, '2026-06-16 16:18:00', 1, 'test', '2026-06-16 16:18:17'),
+(3, 4, '2026-06-16 16:20:00', 1, NULL, '2026-06-16 16:20:16');
 
 -- --------------------------------------------------------
 
@@ -45,7 +69,8 @@ INSERT INTO `locations` (`id`, `name`, `beschreibung`, `aktiv`, `created_at`) VA
 (5, 'test', 'test text', 1, '2026-06-12 09:45:09'),
 (6, 'aktivTest', 'mal sehen', 0, '2026-06-12 10:18:20'),
 (7, 'Zeit', 'zeit text', 1, '2026-06-12 10:28:30'),
-(8, 'Moritz', '15.06 test', 1, '2026-06-15 16:40:30');
+(8, 'Moritz', '15.06 test', 1, '2026-06-15 16:40:30'),
+(9, 'Neu', '', 1, '2026-06-16 14:17:35');
 
 -- --------------------------------------------------------
 
@@ -80,7 +105,9 @@ INSERT INTO `measurements` (`id`, `location_id`, `mood`, `co2`, `humidity`, `tem
 (11, 7, 'negativ', 40, 40.00, 40.00, '2026-06-13 09:38:53'),
 (15, 8, 'positiv', 20, 20.00, 20.00, '2026-06-15 16:46:24'),
 (16, 8, 'neutral', 50, 50.00, 50.00, '2026-06-14 10:00:00'),
-(17, 8, 'negativ', 100, 100.00, 100.00, '2026-06-16 10:00:00');
+(17, 8, 'negativ', 100, 100.00, 100.00, '2026-06-16 10:00:00'),
+(18, 9, 'positiv', 20, 20.00, 20.00, '2026-06-16 14:19:00'),
+(19, 4, 'negativ', 1000, 999.99, 999.99, '2026-06-16 14:20:00');
 
 -- --------------------------------------------------------
 
@@ -111,6 +138,14 @@ INSERT INTO `users` (`id`, `username`, `password_hash`, `role`, `active`, `creat
 --
 
 --
+-- Indizes für die Tabelle `device_location_history`
+--
+ALTER TABLE `device_location_history`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `location_id` (`location_id`),
+  ADD KEY `changed_by` (`changed_by`);
+
+--
 -- Indizes für die Tabelle `locations`
 --
 ALTER TABLE `locations`
@@ -135,16 +170,22 @@ ALTER TABLE `users`
 --
 
 --
+-- AUTO_INCREMENT für Tabelle `device_location_history`
+--
+ALTER TABLE `device_location_history`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
 -- AUTO_INCREMENT für Tabelle `locations`
 --
 ALTER TABLE `locations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT für Tabelle `measurements`
 --
 ALTER TABLE `measurements`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
 
 --
 -- AUTO_INCREMENT für Tabelle `users`
@@ -155,6 +196,13 @@ ALTER TABLE `users`
 --
 -- Constraints der exportierten Tabellen
 --
+
+--
+-- Constraints der Tabelle `device_location_history`
+--
+ALTER TABLE `device_location_history`
+  ADD CONSTRAINT `device_location_history_ibfk_1` FOREIGN KEY (`location_id`) REFERENCES `locations` (`id`),
+  ADD CONSTRAINT `device_location_history_ibfk_2` FOREIGN KEY (`changed_by`) REFERENCES `users` (`id`);
 
 --
 -- Constraints der Tabelle `measurements`
