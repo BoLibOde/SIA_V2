@@ -60,6 +60,8 @@ This keeps the UI tied to the logged-in desktop session (Wayland/X session), whi
 
 Avoid `git pull` in day-to-day Pi runtime updates when local branch tracking is uncertain
 or when local merge state is unclear. `git pull` can fail unexpectedly or create local merges.
+`update_pi.sh` uses a fast-forward-only update (`git merge --ff-only origin/main`) and exits with
+clear guidance if the update cannot be done safely.
 Use the helper scripts in the repository root:
 
 ```bash

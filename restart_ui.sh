@@ -14,18 +14,15 @@ fi
 
 if pgrep -f "python -m device.main" >/dev/null 2>&1; then
     pkill -f "python -m device.main"
-    attempts=0
-    for ((i = 1; i <= MAX_STOP_CHECKS; i++)); do
-        attempts="$i"
-        if ! pgrep -f "python -m device.main" >/dev/null 2>&1; then
-            break
-        fi
+    checks=0
+    while pgrep -f "python -m device.main" >/dev/null 2>&1 && [ "$checks" -lt "$MAX_STOP_CHECKS" ]; do
+        checks=$((checks + 1))
         sleep 0.5
     done
 fi
 
 if pgrep -f "python -m device.main" >/dev/null 2>&1; then
-    echo "Could not stop existing device.main process cleanly after $attempts checks." >&2
+    echo "Could not stop existing device.main process cleanly after $checks checks." >&2
     exit 1
 fi
 
