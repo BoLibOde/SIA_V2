@@ -1,8 +1,16 @@
 const moodCanvas = document.getElementById('moodChart');
 const temperatureCanvas = document.getElementById('temperatureChart');
+const moodPositiveValue = document.getElementById('mood-positive-value');
+const moodNeutralValue = document.getElementById('mood-neutral-value');
+const moodNegativeValue = document.getElementById('mood-negative-value');
+const co2Value = document.getElementById('co2-value');
+const co2ProgressBar = document.getElementById('co2-progress-bar');
+const humidityValue = document.getElementById('humidity-value');
+const averageTemperatureValue = document.getElementById('average-temperature-value');
 
 let moodChartInstance = null;
 let tempChart = null;
+let isDashboardRefreshRunning = false;
 
 if (typeof moodChartData !== 'undefined' && moodCanvas) {
     moodChartInstance = new Chart(moodCanvas, {
@@ -81,4 +89,76 @@ function updateTemperatureChart(timeRange) {
     tempChart.data.labels = Array.isArray(rangeData.labels) ? rangeData.labels : [];
     tempChart.data.datasets[0].data = Array.isArray(rangeData.values) ? rangeData.values : [];
     tempChart.update();
+}
+
+function formatMetricValue(value, decimals) {
+    return Number(value || 0).toFixed(decimals).replace(/\.?0+$/, '');
+}
+
+function applyDashboardData(dashboardData) {
+    if (!dashboardData || typeof dashboardData !== 'object') return;
+
+    const moodValues = Array.isArray(dashboardData?.moodData?.values)
+        ? dashboardData.moodData.values
+        : [0, 0, 0];
+
+    if (moodChartInstance) {
+        moodChartInstance.data.datasets[0].data = moodValues;
+        moodChartInstance.update();
+    }
+
+    if (moodPositiveValue) moodPositiveValue.textContent = String(moodValues[0] ?? 0);
+    if (moodNeutralValue) moodNeutralValue.textContent = String(moodValues[1] ?? 0);
+    if (moodNegativeValue) moodNegativeValue.textContent = String(moodValues[2] ?? 0);
+
+    const summary = dashboardData.summary || {};
+    const co2 = Number(summary.currentCo2 || 0);
+    const humidity = Number(summary.currentHumidity || 0);
+    const averageTemperature = Number(summary.averageTemperature || 0);
+    const co2BarWidth = Number(summary.co2BarWidth || 0);
+
+    if (co2Value) co2Value.textContent = `${co2} ppm`;
+    if (co2ProgressBar) co2ProgressBar.style.width = `${Math.min(100, Math.max(0, co2BarWidth))}%`;
+    if (humidityValue) humidityValue.textContent = `${formatMetricValue(humidity, 2)}%`;
+    if (averageTemperatureValue) averageTemperatureValue.textContent = `${formatMetricValue(averageTemperature, 1)}°C`;
+
+    const temperatureValues = dashboardData.temperatureData;
+    if (tempChart && temperatureValues) {
+        tempChart.data.labels = Array.isArray(temperatureValues.labels) ? temperatureValues.labels : [];
+        tempChart.data.datasets[0].data = Array.isArray(temperatureValues.values) ? temperatureValues.values : [];
+        tempChart.update();
+    }
+}
+
+async function refreshDashboardData() {
+    if (typeof dashboardConfig === 'undefined') return;
+    if (document.hidden) return;
+    if (isDashboardRefreshRunning) return;
+
+    isDashboardRefreshRunning = true;
+
+    try {
+        const url = `${dashboardConfig.dataUrl}?location_id=${encodeURIComponent(dashboardConfig.locationId)}&range=${encodeURIComponent(dashboardConfig.range)}`;
+        const response = await fetch(url, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        if (!response.ok) {
+            return;
+        }
+
+        const dashboardData = await response.json();
+        applyDashboardData(dashboardData);
+    } catch (error) {
+        console.error('Dashboard refresh failed', error);
+    } finally {
+        isDashboardRefreshRunning = false;
+    }
+}
+
+if (typeof dashboardConfig !== 'undefined' && dashboardConfig.locationId > 0) {
+    const refreshIntervalMs = Number(dashboardConfig.refreshIntervalMs) || 15000;
+    window.setInterval(refreshDashboardData, refreshIntervalMs);
 }
