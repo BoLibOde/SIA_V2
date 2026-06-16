@@ -55,3 +55,26 @@ Path=/home/<user>/Desktop/SIA_V2
 ```
 
 This keeps the UI tied to the logged-in desktop session (Wayland/X session), which is required for Pygame display startup.
+
+## 5) Recommended update flow on the Pi
+
+Avoid `git pull` in day-to-day Pi runtime updates when local branch tracking is uncertain.
+Use the helper scripts in the repository root:
+
+```bash
+cd ~/Desktop/SIA_V2
+chmod +x restart_ui.sh update_pi.sh
+./update_pi.sh
+```
+
+`update_pi.sh` will:
+
+- fetch and fast-forward to `origin/main` in a predictable way
+- preserve local `.env.device`
+- refresh device Python dependencies
+- restart the desktop-launched UI via `restart_ui.sh`
+
+Upload safety note:
+
+- Failed uploads continue to be buffered in `device/pending_uploads.json`
+- The app keeps retrying those pending uploads in the background
