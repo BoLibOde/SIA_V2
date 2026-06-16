@@ -15,5 +15,8 @@ dist/
 build/
 .env
 .env.*
+
+# Local PHP production secrets — never commit the live config
+server/WEBSITE/db.local.php
 pending_uploads.json
 device/pending_uploads.json

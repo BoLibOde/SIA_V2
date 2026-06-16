@@ -92,11 +92,19 @@ Main config file:
 
 - `server/WEBSITE/db.php`
 
-Local override file (not committed):
+Local override file — **server-local only, never committed**:
 
 - `server/WEBSITE/db.local.php`
 
-Example:
+This file is listed in `.gitignore` and excluded from all deploys.
+Copy the example to create it on a new server:
+
+```bash
+cp server/WEBSITE/db.local.example.php /var/www/html/stimmungsbarometer/db.local.php
+# then edit with real credentials and token
+```
+
+Example (`db.local.example.php`):
 
 ```php
 <?php
