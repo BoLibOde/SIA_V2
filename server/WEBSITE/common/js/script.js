@@ -161,30 +161,33 @@ async function refreshDashboardData() {
 }
 
 if (typeof dashboardConfig !== 'undefined' && dashboardConfig.locationId > 0) {
-    const refreshIntervalMs = Number(dashboardConfig.refreshIntervalMs) || 15000;
+    const refreshIntervalMs = Number(dashboardConfig.refreshIntervalMs);
+    if (!Number.isFinite(refreshIntervalMs) || refreshIntervalMs <= 0) {
+        console.error('Invalid dashboard refresh interval configuration');
+    } else {
+        const startDashboardRefresh = () => {
+            if (dashboardRefreshIntervalId !== null) return;
+            refreshDashboardData();
+            dashboardRefreshIntervalId = window.setInterval(refreshDashboardData, refreshIntervalMs);
+        };
 
-    const startDashboardRefresh = () => {
-        if (dashboardRefreshIntervalId !== null) return;
-        refreshDashboardData();
-        dashboardRefreshIntervalId = window.setInterval(refreshDashboardData, refreshIntervalMs);
-    };
+        const stopDashboardRefresh = () => {
+            if (dashboardRefreshIntervalId === null) return;
+            window.clearInterval(dashboardRefreshIntervalId);
+            dashboardRefreshIntervalId = null;
+        };
 
-    const stopDashboardRefresh = () => {
-        if (dashboardRefreshIntervalId === null) return;
-        window.clearInterval(dashboardRefreshIntervalId);
-        dashboardRefreshIntervalId = null;
-    };
-
-    if (!document.hidden) {
-        startDashboardRefresh();
-    }
-
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-            stopDashboardRefresh();
-            return;
+        if (!document.hidden) {
+            startDashboardRefresh();
         }
 
-        startDashboardRefresh();
-    });
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopDashboardRefresh();
+                return;
+            }
+
+            startDashboardRefresh();
+        });
+    }
 }
