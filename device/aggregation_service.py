@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from device.models import HourlyUploadPayload, MoodCounts, SensorReading
 
@@ -14,7 +14,7 @@ class AggregationService:
         if not sensor_samples:
             return None
 
-        current_time = now or datetime.utcnow()
+        current_time = now or datetime.now(UTC)
         period_end = current_time.replace(minute=0, second=0, microsecond=0)
         period_start = period_end - timedelta(hours=1)
 

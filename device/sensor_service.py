@@ -2,7 +2,7 @@ import logging
 import random
 import threading
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from device.models import SensorReading
@@ -122,7 +122,7 @@ class SensorService:
             temperature_c=round(self._sim_temp, 2),
             humidity_pct=round(self._sim_humidity, 2),
             co2_ppm=int(self._sim_co2),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
         )
 
     def _hardware_loop(self) -> None:
@@ -142,7 +142,7 @@ class SensorService:
                                 temperature_c=round(temp, 2),
                                 humidity_pct=round(humidity, 2),
                                 co2_ppm=int(co2),
-                                timestamp=datetime.utcnow(),
+                                timestamp=datetime.now(UTC),
                             )
                             self._append_reading(reading)
                     except Exception as error:

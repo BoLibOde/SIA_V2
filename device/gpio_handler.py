@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 import RPi.GPIO as GPIO
 
@@ -29,7 +29,7 @@ class GpioHandler:
             "neutral": 0.0,
             "bad": 0.0,
         }
-        self.current_hour_key = self._hour_key(datetime.utcnow())
+        self.current_hour_key = self._hour_key(datetime.now(UTC))
         self._current_day_key = self._day_key()
         # Track previous pin state for HIGH->LOW transition detection
         self._prev_state: dict[str, int] = {}
@@ -103,7 +103,7 @@ class GpioHandler:
 
     def clear_hourly_counts(self) -> None:
         self.hourly_counts = MoodCounts()
-        self.current_hour_key = self._hour_key(datetime.utcnow())
+        self.current_hour_key = self._hour_key(datetime.now(UTC))
 
     def reset_daily_display_counts(self) -> None:
         """Manually reset the daily display counters (Pi display only, no server data affected)."""
@@ -120,6 +120,11 @@ class GpioHandler:
         events, self._live_event_queue = self._live_event_queue, []
         return events
 
+    def requeue_live_events(self, moods: list[str]) -> None:
+        """Push drained live events back to the front of the queue."""
+        if moods:
+            self._live_event_queue = list(moods) + self._live_event_queue
+
     def _hour_key(self, value: datetime) -> str:
         return value.strftime("%Y-%m-%d-%H")
 
@@ -127,7 +132,7 @@ class GpioHandler:
         return date.today().isoformat()
 
     def _roll_hour_if_needed(self) -> None:
-        now_key = self._hour_key(datetime.utcnow())
+        now_key = self._hour_key(datetime.now(UTC))
         if now_key != self.current_hour_key:
             self.hourly_counts = MoodCounts()
             self.current_hour_key = now_key

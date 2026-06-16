@@ -141,7 +141,25 @@ def test_save_failed_dict_and_retry_pending_together(tmp_path) -> None:
     assert len(service._read_pending()) == 1
 
     with patch("device.upload_service.requests.post", return_value=Mock(status_code=201)):
-        service.retry_pending_uploads()
+        sent_count, remaining_count = service.retry_pending_uploads()
 
     # Successfully retried entries are removed from the file
+    assert sent_count == 1
+    assert remaining_count == 0
     assert len(service._read_pending()) == 0
+
+
+def test_retry_pending_uploads_reports_successes_and_remaining_failures(tmp_path) -> None:
+    service = _make_service(tmp_path)
+    service.save_failed_dict({"created_at": "2024-01-01T09:00:00", "mood": "neutral", "co2": 600, "humidity": 40, "temperature": 21})
+    service.save_failed_dict({"created_at": "2024-01-01T09:01:00", "mood": "bad", "co2": 610, "humidity": 41, "temperature": 22})
+
+    responses = [Mock(status_code=201), Mock(status_code=500)]
+    with patch("device.upload_service.requests.post", side_effect=responses):
+        sent_count, remaining_count = service.retry_pending_uploads()
+
+    assert sent_count == 1
+    assert remaining_count == 1
+    pending = service._read_pending()
+    assert len(pending) == 1
+    assert pending[0]["mood"] == "bad"
