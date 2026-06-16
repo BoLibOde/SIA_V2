@@ -36,7 +36,8 @@ A dedicated machine endpoint now exists in the PHP app:
 - `POST` expects JSON payload.
 - No browser session login is required.
 - Stores one measurement row in `measurements`.
-- Resolves `location_id` from `device_location_history` by `valid_from <= created_at` (latest match).
+- Uses `location_id` from payload when provided.
+- Otherwise resolves `location_id` from `device_location_history` by `valid_from <= created_at` (latest match).
 - Returns JSON and proper HTTP status codes.
 
 ### Optional shared secret (recommended)
@@ -54,6 +55,7 @@ If configured and missing/invalid, endpoint returns `401`.
 
 ```json
 {
+  "location_id": 1,
   "mood": "neutral",
   "co2": 640,
   "humidity": 42.5,
@@ -80,6 +82,7 @@ If configured and missing/invalid, endpoint returns `401`.
 ```
 
 The endpoint maps hourly payload fields to `measurements` and derives mood from `mood_counts`.
+For multi-device setups, include `location_id` explicitly in payloads.
 
 ---
 

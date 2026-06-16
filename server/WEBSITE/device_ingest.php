@@ -123,21 +123,25 @@ if ($createdAtTimestamp === false) {
 $createdAt = date('Y-m-d H:i:s', $createdAtTimestamp);
 
 try {
-    $stmt = $pdo->prepare("
-        SELECT location_id
-        FROM device_location_history
-        WHERE valid_from <= :created_at
-        ORDER BY valid_from DESC
-        LIMIT 1
-    ");
-    $stmt->execute([':created_at' => $createdAt]);
-    $locationHistory = $stmt->fetch(PDO::FETCH_ASSOC);
+    $locationId = (int)($payload['location_id'] ?? 0);
 
-    if (!$locationHistory) {
-        respond_json(422, ['error' => 'No device location configured for this timestamp.']);
+    if ($locationId <= 0) {
+        $stmt = $pdo->prepare("
+            SELECT location_id
+            FROM device_location_history
+            WHERE valid_from <= :created_at
+            ORDER BY valid_from DESC
+            LIMIT 1
+        ");
+        $stmt->execute([':created_at' => $createdAt]);
+        $locationHistory = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$locationHistory) {
+            respond_json(422, ['error' => 'No device location configured for this timestamp.']);
+        }
+
+        $locationId = (int)$locationHistory['location_id'];
     }
-
-    $locationId = (int)$locationHistory['location_id'];
 
     $stmt = $pdo->prepare("
         INSERT INTO measurements (location_id, mood, co2, humidity, temperature, created_at)
@@ -159,5 +163,6 @@ try {
         'created_at' => $createdAt,
     ]);
 } catch (PDOException $exception) {
+    error_log('device_ingest.php database error: ' . $exception->getMessage());
     respond_json(500, ['error' => 'Database error while storing measurement.']);
 }
