@@ -26,6 +26,7 @@ class DeviceApp:
             server_base_url=self.config.server_base_url,
             upload_endpoint=self.config.upload_endpoint,
             health_endpoint=self.config.health_endpoint,
+            device_token=self.config.device_token,
             retry_file=self.config.retry_file_path,
             timeout_seconds=self.config.upload_timeout_seconds,
         )

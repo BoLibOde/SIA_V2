@@ -5,4 +5,5 @@ return [
     'user' => 'sia_web',
     'pass' => 'CHANGE_ME',
     'timezone' => '+02:00',
+    'device_ingest_token' => 'CHANGE_ME_DEVICE_TOKEN',
 ];
