@@ -14,7 +14,7 @@ if [ -f "$ENV_FILE" ]; then
     set +a
 fi
 
-: "${SIA_SERVER_URL:=http://100.74.7.35}"
+: "${SIA_SERVER_URL:?Set SIA_SERVER_URL in .env.device}"
 : "${SIA_UPLOAD_ENDPOINT:=/device_ingest.php}"
 : "${SIA_HEALTH_ENDPOINT:=/device_ingest.php}"
 : "${SIA_DEVICE_TOKEN:=}"
