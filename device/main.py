@@ -1,5 +1,5 @@
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from device.aggregation_service import AggregationService
 from device.config import DeviceConfig
@@ -78,6 +78,28 @@ class DeviceApp:
                     daily_counts = self.gpio_handler.get_daily_display_counts()
                     self._last_upload_status = f"{datetime.now().strftime('%H:%M')} Tageszähler zurückgesetzt"
 
+                # Live-event track: upload one measurement per button press so
+                # the website reflects mood changes without waiting for the next
+                # hourly aggregate window.
+                live_events = self.gpio_handler.pop_live_events()
+                if live_events and latest is not None:
+                    for mood in live_events:
+                        ok, msg = self.upload_service.upload_live_event(mood, latest, now)
+                        if not ok:
+                            # Persist for retry so no live event is lost offline
+                            mood_counts = {"good": 0, "neutral": 0, "bad": 0}
+                            if mood in mood_counts:
+                                mood_counts[mood] = 1
+                            self.upload_service.save_failed_dict({
+                                "mood_counts": mood_counts,
+                                "sensor_avg": {
+                                    "temperature_c": round(latest.temperature_c, 2),
+                                    "humidity_pct": round(latest.humidity_pct, 2),
+                                    "co2_ppm": int(round(latest.co2_ppm)),
+                                },
+                                "created_at": now.isoformat(),
+                            })
+
                 self.ui.draw(latest, daily_counts, self._server_connected, self._last_upload_status)
                 self.upload_service.retry_pending_uploads()
                 self._try_hourly_upload(now)
@@ -101,18 +123,50 @@ class DeviceApp:
         self.ui.close()
 
     def _manual_upload(self) -> None:
-        """Flush any pending uploads immediately. Called via U key press.
+        """Manual aggregate upload triggered by the U key.
 
-        Retries the existing pending-upload buffer without modifying any counts or
-        creating new payloads, so no data is lost or double-counted.
+        Upload tracks performed in order:
+        1. Retry pending uploads (hourly + live-event failures from the buffer).
+        2. Build an aggregate payload for the window since the last successful
+           aggregate upload and upload it.  The aggregate checkpoint is advanced
+           so the same data is never uploaded twice.
+        3. If there is nothing new to aggregate (no sensor samples in the window),
+           show a 'nothing new' status instead of sending an empty payload.
+
+        Live-event uploads are NOT affected by this call; they run independently
+        in the main loop and are not double-counted here.
         """
-        now = datetime.now()
+        now = datetime.utcnow()
+
+        # Step 1: flush existing retry buffer
         self.upload_service.retry_pending_uploads()
-        self._server_connected = self.upload_service.check_server_health()
-        if self._server_connected:
-            self._last_upload_status = f"{now.strftime('%H:%M')} Manuell: OK"
+
+        # Step 2: aggregate the window since the last aggregate upload checkpoint
+        period_start = self.last_uploaded_hour if self.last_uploaded_hour is not None else now - timedelta(hours=1)
+        payload = self.aggregation_service.build_window_payload(
+            device_id=self.config.device_id,
+            mood_counts=self.gpio_handler.get_hourly_counts(),
+            sensor_samples=self.sensor_service.get_hour_samples(),
+            period_start=period_start,
+            period_end=now,
+        )
+
+        if payload is None:
+            self._last_upload_status = f"{now.strftime('%H:%M')} Manuell: nichts Neues"
+            self._server_connected = self.upload_service.check_server_health()
+            return
+
+        success, status_msg = self.upload_service.upload_hourly_payload(payload)
+        self._server_connected = success
+
+        if success:
+            # Advance checkpoint so the same window is not uploaded again
+            self.last_uploaded_hour = now
+            self.gpio_handler.clear_hourly_counts()
+            self._last_upload_status = f"{now.strftime('%H:%M')} Manuell: {status_msg}"
         else:
-            self._last_upload_status = f"{now.strftime('%H:%M')} Server nicht erreichbar"
+            self.upload_service.save_failed_upload(payload)
+            self._last_upload_status = f"{now.strftime('%H:%M')} Manuell fehlgeschlagen: {status_msg}"
 
     def _try_hourly_upload(self, now: datetime) -> None:
         current_hour = now.replace(minute=0, second=0, microsecond=0)

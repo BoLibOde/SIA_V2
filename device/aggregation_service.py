@@ -45,3 +45,47 @@ class AggregationService:
             sensor_avg_co2_ppm=int(round(avg_co2)),
             sample_count=len(filtered_samples),
         )
+
+    def build_window_payload(
+        self,
+        device_id: str,
+        mood_counts: MoodCounts,
+        sensor_samples: list[SensorReading],
+        period_start: datetime,
+        period_end: datetime,
+    ) -> HourlyUploadPayload | None:
+        """Build a payload for an arbitrary time window.
+
+        Used by manual upload (U key) to aggregate the data accumulated since the
+        last successful aggregate upload checkpoint, without re-sending anything
+        that was already uploaded.  ``mood_counts`` must reflect only the presses
+        since that checkpoint (i.e. ``gpio_handler.get_hourly_counts()`` which is
+        cleared after every successful aggregate upload).
+        """
+        filtered_samples = [
+            sample
+            for sample in sensor_samples
+            if period_start <= sample.timestamp < period_end
+        ]
+
+        if not filtered_samples:
+            return None
+
+        avg_temperature = sum(sample.temperature_c for sample in filtered_samples) / len(filtered_samples)
+        avg_humidity = sum(sample.humidity_pct for sample in filtered_samples) / len(filtered_samples)
+        avg_co2 = sum(sample.co2_ppm for sample in filtered_samples) / len(filtered_samples)
+
+        return HourlyUploadPayload(
+            device_id=device_id,
+            period_start=period_start,
+            period_end=period_end,
+            mood_counts=MoodCounts(
+                good=mood_counts.good,
+                neutral=mood_counts.neutral,
+                bad=mood_counts.bad,
+            ),
+            sensor_avg_temperature_c=round(avg_temperature, 2),
+            sensor_avg_humidity_pct=round(avg_humidity, 2),
+            sensor_avg_co2_ppm=int(round(avg_co2)),
+            sample_count=len(filtered_samples),
+        )

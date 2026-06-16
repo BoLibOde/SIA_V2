@@ -33,6 +33,9 @@ class GpioHandler:
         self._current_day_key = self._day_key()
         # Track previous pin state for HIGH->LOW transition detection
         self._prev_state: dict[str, int] = {}
+        # Queue of mood strings for per-press live-event uploads.
+        # Each entry is one button press; drained by pop_live_events() in main.py.
+        self._live_event_queue: list[str] = []
 
     def start(self) -> None:
         GPIO.setmode(GPIO.BCM)
@@ -62,6 +65,8 @@ class GpioHandler:
                     setattr(self.total_counts, mood, getattr(self.total_counts, mood) + 1)
                     setattr(self.hourly_counts, mood, getattr(self.hourly_counts, mood) + 1)
                     setattr(self.daily_display_counts, mood, getattr(self.daily_display_counts, mood) + 1)
+                    # Enqueue for live-event upload (one entry per press)
+                    self._live_event_queue.append(mood)
             self._prev_state[mood] = current
 
     def stop(self) -> None:
@@ -104,6 +109,16 @@ class GpioHandler:
         """Manually reset the daily display counters (Pi display only, no server data affected)."""
         self.daily_display_counts = MoodCounts()
         self._current_day_key = self._day_key()
+
+    def pop_live_events(self) -> list[str]:
+        """Return and clear all pending live-event moods since the last call.
+
+        Each entry is a mood string ('good', 'neutral', or 'bad') corresponding to
+        one button press.  Callers (main.py) are expected to attempt a live-event
+        upload for every returned entry and use save_failed_dict() for any that fail.
+        """
+        events, self._live_event_queue = self._live_event_queue, []
+        return events
 
     def _hour_key(self, value: datetime) -> str:
         return value.strftime("%Y-%m-%d-%H")
