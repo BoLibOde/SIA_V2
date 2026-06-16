@@ -16,7 +16,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [ -f "$ENV_FILE" ]; then
-    ENV_BACKUP="$(mktemp /tmp/.env.device.backup.XXXXXX)"
+    ENV_BACKUP="$(mktemp -p "$APP_DIR" .env.device.backup.XXXXXX)"
     cp "$ENV_FILE" "$ENV_BACKUP"
 fi
 

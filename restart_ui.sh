@@ -3,6 +3,7 @@ set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 START_SCRIPT="$APP_DIR/start_ui.sh"
+MAX_STOP_CHECKS=20
 
 echo "Restarting SIA UI..."
 
@@ -13,7 +14,7 @@ fi
 
 if pgrep -f "python -m device.main" >/dev/null 2>&1; then
     pkill -f "python -m device.main"
-    for _ in {1..20}; do
+    for ((i = 1; i <= MAX_STOP_CHECKS; i++)); do
         if ! pgrep -f "python -m device.main" >/dev/null 2>&1; then
             break
         fi
