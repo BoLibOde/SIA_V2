@@ -12,6 +12,7 @@ fi
 
 echo "[web] Syncing PHP website files"
 sudo mkdir -p "$DEST"
+# db.local.php holds local-only production secrets — it must never be overwritten by a deploy
 sudo rsync -av --delete \
   --exclude 'db.local.php' \
   --exclude '.gitkeep' \
