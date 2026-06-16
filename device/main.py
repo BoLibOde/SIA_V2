@@ -76,7 +76,7 @@ class DeviceApp:
                 if self.ui.action_reset_daily:
                     self.gpio_handler.reset_daily_display_counts()
                     daily_counts = self.gpio_handler.get_daily_display_counts()
-                    self._last_upload_status = f"{now.strftime('%H:%M')} Tages-Reset"
+                    self._last_upload_status = f"{datetime.now().strftime('%H:%M')} Tageszähler zurückgesetzt"
 
                 self.ui.draw(latest, daily_counts, self._server_connected, self._last_upload_status)
                 self.upload_service.retry_pending_uploads()
@@ -106,11 +106,11 @@ class DeviceApp:
         Retries the existing pending-upload buffer without modifying any counts or
         creating new payloads, so no data is lost or double-counted.
         """
-        now = datetime.utcnow()
+        now = datetime.now()
         self.upload_service.retry_pending_uploads()
         self._server_connected = self.upload_service.check_server_health()
         if self._server_connected:
-            self._last_upload_status = f"{now.strftime('%H:%M')} Manuell: ok"
+            self._last_upload_status = f"{now.strftime('%H:%M')} Manuell: OK"
         else:
             self._last_upload_status = f"{now.strftime('%H:%M')} Server nicht erreichbar"
 
