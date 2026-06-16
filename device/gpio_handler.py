@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 import RPi.GPIO as GPIO
 
@@ -21,12 +21,16 @@ class GpioHandler:
 
         self.total_counts = MoodCounts()
         self.hourly_counts = MoodCounts()
+        # Separate daily display counter (local time). Used only for the Pi UI;
+        # does NOT affect hourly upload aggregation. Resets automatically at midnight.
+        self.daily_display_counts = MoodCounts()
         self.last_pressed = {
             "good": 0.0,
             "neutral": 0.0,
             "bad": 0.0,
         }
         self.current_hour_key = self._hour_key(datetime.utcnow())
+        self._current_day_key = self._day_key()
         # Track previous pin state for HIGH->LOW transition detection
         self._prev_state: dict[str, int] = {}
 
@@ -50,12 +54,14 @@ class GpioHandler:
             "bad": self.bad_pin,
         }
         self._roll_hour_if_needed()
+        self._roll_day_if_needed()
         for mood, pin in pins.items():
             current = GPIO.input(pin)
             if self._prev_state.get(mood, GPIO.HIGH) == GPIO.HIGH and current == GPIO.LOW:
                 if self._can_press(mood):
                     setattr(self.total_counts, mood, getattr(self.total_counts, mood) + 1)
                     setattr(self.hourly_counts, mood, getattr(self.hourly_counts, mood) + 1)
+                    setattr(self.daily_display_counts, mood, getattr(self.daily_display_counts, mood) + 1)
             self._prev_state[mood] = current
 
     def stop(self) -> None:
@@ -77,18 +83,45 @@ class GpioHandler:
             bad=self.hourly_counts.bad,
         )
 
+    def get_daily_display_counts(self) -> MoodCounts:
+        """Return today's display counts (local time). Auto-resets at midnight.
+
+        These counts are for the Pi display only and are independent of the
+        hourly upload aggregation counters.
+        """
+        self._roll_day_if_needed()
+        return MoodCounts(
+            good=self.daily_display_counts.good,
+            neutral=self.daily_display_counts.neutral,
+            bad=self.daily_display_counts.bad,
+        )
+
     def clear_hourly_counts(self) -> None:
         self.hourly_counts = MoodCounts()
         self.current_hour_key = self._hour_key(datetime.utcnow())
 
+    def reset_daily_display_counts(self) -> None:
+        """Manually reset the daily display counters (Pi display only, no server data affected)."""
+        self.daily_display_counts = MoodCounts()
+        self._current_day_key = self._day_key()
+
     def _hour_key(self, value: datetime) -> str:
         return value.strftime("%Y-%m-%d-%H")
+
+    def _day_key(self) -> str:
+        return date.today().isoformat()
 
     def _roll_hour_if_needed(self) -> None:
         now_key = self._hour_key(datetime.utcnow())
         if now_key != self.current_hour_key:
             self.hourly_counts = MoodCounts()
             self.current_hour_key = now_key
+
+    def _roll_day_if_needed(self) -> None:
+        today = self._day_key()
+        if today != self._current_day_key:
+            self.daily_display_counts = MoodCounts()
+            self._current_day_key = today
 
     def _can_press(self, mood: str) -> bool:
         now = time.time()

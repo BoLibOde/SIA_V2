@@ -60,12 +60,25 @@ class DeviceApp:
                 latest = self.sensor_service.get_latest_reading()
                 self.gpio_handler.update()
                 hourly_counts = self.gpio_handler.get_hourly_counts()
+                # Daily display counts are shown in the UI (reset at midnight or via R key).
+                # They are independent of hourly_counts used for uploads.
+                daily_counts = self.gpio_handler.get_daily_display_counts()
 
                 if not self.ui.handle_events():
                     self.running = False
                     break
 
-                self.ui.draw(latest, hourly_counts, self._server_connected, self._last_upload_status)
+                # Handle keyboard (or future GPIO button) actions
+                # To add physical buttons: check button flags from gpio_handler here
+                # alongside self.ui.action_upload / self.ui.action_reset_daily.
+                if self.ui.action_upload:
+                    self._manual_upload()
+                if self.ui.action_reset_daily:
+                    self.gpio_handler.reset_daily_display_counts()
+                    daily_counts = self.gpio_handler.get_daily_display_counts()
+                    self._last_upload_status = f"{datetime.now().strftime('%H:%M')} Tageszähler zurückgesetzt"
+
+                self.ui.draw(latest, daily_counts, self._server_connected, self._last_upload_status)
                 self.upload_service.retry_pending_uploads()
                 self._try_hourly_upload(now)
 
@@ -86,6 +99,20 @@ class DeviceApp:
         self.sensor_service.stop()
         self.gpio_handler.stop()
         self.ui.close()
+
+    def _manual_upload(self) -> None:
+        """Flush any pending uploads immediately. Called via U key press.
+
+        Retries the existing pending-upload buffer without modifying any counts or
+        creating new payloads, so no data is lost or double-counted.
+        """
+        now = datetime.now()
+        self.upload_service.retry_pending_uploads()
+        self._server_connected = self.upload_service.check_server_health()
+        if self._server_connected:
+            self._last_upload_status = f"{now.strftime('%H:%M')} Manuell: OK"
+        else:
+            self._last_upload_status = f"{now.strftime('%H:%M')} Server nicht erreichbar"
 
     def _try_hourly_upload(self, now: datetime) -> None:
         current_hour = now.replace(minute=0, second=0, microsecond=0)
