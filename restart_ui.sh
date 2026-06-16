@@ -13,7 +13,7 @@ fi
 
 if pgrep -f "python -m device.main" >/dev/null 2>&1; then
     pkill -f "python -m device.main"
-    for _ in $(seq 1 20); do
+    for _ in {1..20}; do
         if ! pgrep -f "python -m device.main" >/dev/null 2>&1; then
             break
         fi

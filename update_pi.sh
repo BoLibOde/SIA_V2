@@ -4,18 +4,19 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$APP_DIR/.venv"
 ENV_FILE="$APP_DIR/.env.device"
-ENV_BACKUP="/tmp/.env.device.backup.$$"
+ENV_BACKUP=""
 
 cd "$APP_DIR"
 
 cleanup() {
-    if [ -f "$ENV_BACKUP" ]; then
-        mv "$ENV_BACKUP" "$ENV_FILE"
+    if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
+        mv "$ENV_BACKUP" "$ENV_FILE" || rm -f "$ENV_BACKUP"
     fi
 }
 trap cleanup EXIT
 
 if [ -f "$ENV_FILE" ]; then
+    ENV_BACKUP="$(mktemp /tmp/.env.device.backup.XXXXXX)"
     cp "$ENV_FILE" "$ENV_BACKUP"
 fi
 
