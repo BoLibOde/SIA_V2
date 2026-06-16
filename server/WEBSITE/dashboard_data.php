@@ -11,8 +11,8 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$locationId = isset($_GET['location_id']) ? (int)$_GET['location_id'] : 0;
+$selectedLocationId = isset($_GET['location_id']) ? (int)$_GET['location_id'] : 0;
 $selectedRange = dashboard_normalize_range($_GET['range'] ?? 'tag');
 
-$payload = dashboard_fetch_data($pdo, $locationId, $selectedRange);
+$payload = dashboard_fetch_data($pdo, $selectedLocationId, $selectedRange);
 echo json_encode($payload, JSON_UNESCAPED_UNICODE);

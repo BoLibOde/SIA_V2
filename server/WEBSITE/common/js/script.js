@@ -11,6 +11,7 @@ const averageTemperatureValue = document.getElementById('average-temperature-val
 let moodChartInstance = null;
 let tempChart = null;
 let isDashboardRefreshRunning = false;
+let dashboardRefreshIntervalId = null;
 
 if (typeof moodChartData !== 'undefined' && moodCanvas) {
     moodChartInstance = new Chart(moodCanvas, {
@@ -146,6 +147,7 @@ async function refreshDashboardData() {
         });
 
         if (!response.ok) {
+            console.error('Dashboard refresh failed with status', response.status);
             return;
         }
 
@@ -160,5 +162,29 @@ async function refreshDashboardData() {
 
 if (typeof dashboardConfig !== 'undefined' && dashboardConfig.locationId > 0) {
     const refreshIntervalMs = Number(dashboardConfig.refreshIntervalMs) || 15000;
-    window.setInterval(refreshDashboardData, refreshIntervalMs);
+
+    const startDashboardRefresh = () => {
+        if (dashboardRefreshIntervalId !== null) return;
+        refreshDashboardData();
+        dashboardRefreshIntervalId = window.setInterval(refreshDashboardData, refreshIntervalMs);
+    };
+
+    const stopDashboardRefresh = () => {
+        if (dashboardRefreshIntervalId === null) return;
+        window.clearInterval(dashboardRefreshIntervalId);
+        dashboardRefreshIntervalId = null;
+    };
+
+    if (!document.hidden) {
+        startDashboardRefresh();
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopDashboardRefresh();
+            return;
+        }
+
+        startDashboardRefresh();
+    });
 }
