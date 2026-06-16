@@ -7,28 +7,76 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-if ($_SESSION['role'] !== 'admin') {
+if (($_SESSION['role'] ?? '') !== 'admin') {
     header('Location: dashboard.php');
     exit;
 }
-
-$stmt = $pdo->query("SELECT id, name, beschreibung, aktiv, created_at FROM locations ORDER BY id DESC");
-$locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin-Bereich</title>
     <style>
-        body { font-family: Arial, sans-serif; padding: 30px; background: #f7f7f7; }
-        .box { max-width: 1000px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-        form { margin-top: 20px; }
-        input[type="text"], textarea { width: 100%; padding: 10px; margin-bottom: 12px; box-sizing: border-box; }
-        button { padding: 10px 16px; cursor: pointer; }
-        .toplinks a { margin-right: 12px; }
+        body {
+            font-family: Arial, sans-serif;
+            padding: 30px;
+            background: #f7f7f7;
+        }
+
+        .box {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 24px;
+            border-radius: 12px;
+        }
+
+        h1, h2 {
+            margin-top: 0;
+        }
+
+        .toplinks {
+            margin-bottom: 24px;
+        }
+
+        .toplinks a {
+            display: inline-block;
+            margin-right: 12px;
+            margin-bottom: 8px;
+            text-decoration: none;
+            color: #111;
+            font-weight: bold;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+        }
+
+        .card {
+            display: block;
+            padding: 18px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            background: #fafafa;
+            text-decoration: none;
+            color: #111;
+        }
+
+        .card h2 {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .card p {
+            margin: 0;
+            color: #444;
+            line-height: 1.5;
+        }
     </style>
 </head>
 <body>
@@ -37,54 +85,42 @@ $locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <p>Hallo <?= htmlspecialchars($_SESSION['username']) ?>, du bist als Admin eingeloggt.</p>
 
         <div class="toplinks">
-            <a href="dashboard.php">Zum Dashboard</a>
+            <a href="dashboard.php">Dashboard</a>
+            <a href="admin.php">Admin-Startseite</a>
+            <a href="admin_locations.php">Orte verwalten</a>
+            <a href="add_location.php">Ort anlegen</a>
+            <a href="add_measurement.php">Messwerte hinzufügen</a>
+            <a href="device_location.php">Gerätestandort</a>
+            <a href="admin_users.php">Benutzerverwaltung</a>
             <a href="logout.php">Logout</a>
-			<a href="add_measurement.php">Messwert hinzufügen</a>
         </div>
 
-        <h2>Neuen Ort hinzufügen</h2>
-        <form method="post" action="add_location.php">
-            <label>Name</label>
-            <input type="text" name="name" required>
+        <div class="grid">
+            <a class="card" href="admin_locations.php">
+                <h2>Orte verwalten</h2>
+                <p>Vorhandene Orte anzeigen, bearbeiten und löschen.</p>
+            </a>
 
-            <label>Beschreibung</label>
-            <textarea name="beschreibung" rows="4"></textarea>
+            <a class="card" href="add_location.php">
+                <h2>Ort anlegen</h2>
+                <p>Einen neuen Standort für das Gerät anlegen.</p>
+            </a>
 
-            <label>
-                <input type="checkbox" name="aktiv" checked> Aktiv
-            </label>
-            <br><br>
+            <a class="card" href="add_measurement.php">
+                <h2>Messwerte hinzufügen</h2>
+                <p>Neue Messwerte manuell erfassen und speichern.</p>
+            </a>
 
-            <button type="submit">Ort speichern</button>
-        </form>
+            <a class="card" href="device_location.php">
+                <h2>Gerätestandort</h2>
+                <p>Festlegen, ab wann das Gerät an welchem Ort steht.</p>
+            </a>
 
-        <h2>Vorhandene Orte</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Beschreibung</th>
-                    <th>Aktiv</th>
-                    <th>Aktion</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($locations as $location): ?>
-                    <tr>
-                        <td><?= (int)$location['id'] ?></td>
-                        <td><?= htmlspecialchars($location['name']) ?></td>
-                        <td><?= htmlspecialchars($location['beschreibung']) ?></td>
-                        <td><?= (int)$location['aktiv'] === 1 ? 'Ja' : 'Nein' ?></td>
-                       <td>
-    <a href="edit_location.php?id=<?= (int)$location['id'] ?>">Bearbeiten</a>
-    |
-    <a href="delete_location.php?id=<?= (int)$location['id'] ?>" onclick="return confirm('Diesen Ort wirklich löschen?')">Löschen</a>
-						</td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+            <a class="card" href="admin_users.php">
+                <h2>Benutzerverwaltung</h2>
+                <p>Benutzer und Administratoren verwalten.</p>
+            </a>
+        </div>
     </div>
 </body>
 </html>

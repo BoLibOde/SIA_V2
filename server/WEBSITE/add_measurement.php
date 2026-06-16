@@ -7,19 +7,17 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-if ($_SESSION['role'] !== 'admin') {
+if (($_SESSION['role'] ?? '') !== 'admin') {
     header('Location: dashboard.php');
     exit;
 }
 
-$stmt = $pdo->query("SELECT id, name FROM locations WHERE aktiv = 1 ORDER BY name ASC");
-$locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+date_default_timezone_set('Europe/Berlin');
 
 $error = '';
 $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $locationId = (int)($_POST['location_id'] ?? 0);
     $mood = trim($_POST['mood'] ?? '');
     $co2 = (int)($_POST['co2'] ?? 0);
     $humidity = (float)($_POST['humidity'] ?? 0);
@@ -28,30 +26,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $allowedMoods = ['positiv', 'neutral', 'negativ'];
 
-    if ($locationId <= 0 || !in_array($mood, $allowedMoods, true) || $co2 <= 0) {
+    if (!in_array($mood, $allowedMoods, true) || $co2 <= 0 || $createdAtInput === '') {
         $error = 'Bitte alle Felder korrekt ausfüllen.';
     } else {
-        if ($createdAtInput !== '') {
-            $createdAt = date('Y-m-d H:i:s', strtotime($createdAtInput));
+        $createdAtTimestamp = strtotime($createdAtInput);
+
+        if ($createdAtTimestamp === false) {
+            $error = 'Ungültiges Datum oder ungültige Uhrzeit.';
         } else {
-            $createdAt = date('Y-m-d H:i:s');
+            $createdAt = date('Y-m-d H:i:s', $createdAtTimestamp);
+
+            $stmt = $pdo->prepare("
+                SELECT location_id
+                FROM device_location_history
+                WHERE valid_from <= :created_at
+                ORDER BY valid_from DESC
+                LIMIT 1
+            ");
+            $stmt->execute([':created_at' => $createdAt]);
+            $locationHistory = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$locationHistory) {
+                $error = 'Für diesen Zeitpunkt ist kein Gerätestandort hinterlegt.';
+            } else {
+                $locationId = (int)$locationHistory['location_id'];
+
+                $stmt = $pdo->prepare("
+                    INSERT INTO measurements (location_id, mood, co2, humidity, temperature, created_at)
+                    VALUES (:location_id, :mood, :co2, :humidity, :temperature, :created_at)
+                ");
+                $stmt->execute([
+                    ':location_id' => $locationId,
+                    ':mood' => $mood,
+                    ':co2' => $co2,
+                    ':humidity' => $humidity,
+                    ':temperature' => $temperature,
+                    ':created_at' => $createdAt
+                ]);
+
+                $success = 'Messwert wurde gespeichert.';
+            }
         }
-
-        $stmt = $pdo->prepare("
-            INSERT INTO measurements (location_id, mood, co2, humidity, temperature, created_at)
-            VALUES (:location_id, :mood, :co2, :humidity, :temperature, :created_at)
-        ");
-
-        $stmt->execute([
-            ':location_id' => $locationId,
-            ':mood' => $mood,
-            ':co2' => $co2,
-            ':humidity' => $humidity,
-            ':temperature' => $temperature,
-            ':created_at' => $createdAt
-        ]);
-
-        $success = 'Messwert wurde gespeichert.';
     }
 }
 ?>
@@ -59,94 +74,119 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Messwert hinzufügen</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Messwerte hinzufügen</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            padding: 30px;
             background: #f7f7f7;
+            padding: 30px;
         }
+
         .box {
             max-width: 700px;
             margin: 0 auto;
             background: #fff;
             padding: 24px;
-            border-radius: 10px;
+            border-radius: 12px;
         }
-        select, input {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 12px;
-            box-sizing: border-box;
+
+        .toplinks {
+            margin-bottom: 20px;
         }
-        button {
-            padding: 10px 16px;
-            cursor: pointer;
+
+        .toplinks a {
+            display: inline-block;
+            margin-right: 12px;
+            text-decoration: none;
+            color: #111;
+            font-weight: bold;
         }
+
+        .message {
+            color: green;
+            margin-bottom: 16px;
+        }
+
         .error {
             color: #b00020;
-            margin-bottom: 12px;
+            margin-bottom: 16px;
         }
-        .success {
-            color: green;
-            margin-bottom: 12px;
+
+        .form-grid {
+            display: grid;
+            gap: 12px;
         }
-        .hint {
-            font-size: 14px;
-            color: #666;
-            margin-top: -6px;
-            margin-bottom: 12px;
+
+        input, select, button {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        button {
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
     <div class="box">
-        <h1>Messwert hinzufügen</h1>
+        <h1>Messwerte hinzufügen</h1>
 
-        <?php if ($error): ?>
+       <div class="toplinks">
+    <a href="dashboard.php">Dashboard</a>
+    <a href="admin.php">Admin-Startseite</a>
+    <a href="admin_locations.php">Orte verwalten</a>
+    <a href="add_location.php">Ort anlegen</a>
+    <a href="add_measurement.php">Messwerte hinzufügen</a>
+    <a href="device_location.php">Gerätestandort</a>
+    <a href="admin_users.php">Benutzerverwaltung</a>
+    <a href="logout.php">Logout</a>
+</div>
+
+        <?php if ($success !== ''): ?>
+            <div class="message"><?= htmlspecialchars($success) ?></div>
+        <?php endif; ?>
+
+        <?php if ($error !== ''): ?>
             <div class="error"><?= htmlspecialchars($error) ?></div>
         <?php endif; ?>
 
-        <?php if ($success): ?>
-            <div class="success"><?= htmlspecialchars($success) ?></div>
-        <?php endif; ?>
+        <form method="post" class="form-grid">
+            <div>
+                <label for="mood">Stimmung</label>
+                <select name="mood" id="mood" required>
+                    <option value="">Bitte wählen</option>
+                    <option value="positiv">Positiv</option>
+                    <option value="neutral">Neutral</option>
+                    <option value="negativ">Negativ</option>
+                </select>
+            </div>
 
-        <form method="post">
-            <label>Ort</label>
-            <select name="location_id" required>
-                <option value="">Bitte wählen</option>
-                <?php foreach ($locations as $location): ?>
-                    <option value="<?= (int)$location['id'] ?>">
-                        <?= htmlspecialchars($location['name']) ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
+            <div>
+                <label for="co2">CO₂</label>
+                <input type="number" name="co2" id="co2" required>
+            </div>
 
-            <label>Stimmung</label>
-            <select name="mood" required>
-                <option value="">Bitte wählen</option>
-                <option value="positiv">Positiv</option>
-                <option value="neutral">Neutral</option>
-                <option value="negativ">Negativ</option>
-            </select>
+            <div>
+                <label for="humidity">Luftfeuchtigkeit</label>
+                <input type="number" step="0.1" name="humidity" id="humidity" required>
+            </div>
 
-            <label>CO2 (ppm)</label>
-            <input type="number" name="co2" required>
+            <div>
+                <label for="temperature">Temperatur</label>
+                <input type="number" step="0.1" name="temperature" id="temperature" required>
+            </div>
 
-            <label>Luftfeuchtigkeit (%)</label>
-            <input type="number" name="humidity" step="0.01" required>
+            <div>
+                <label for="created_at">Zeitpunkt der Messung</label>
+                <input type="datetime-local" name="created_at" id="created_at" required>
+            </div>
 
-            <label>Temperatur (°C)</label>
-            <input type="number" name="temperature" step="0.01" required>
-
-            <label>Messdatum und Uhrzeit</label>
-            <input type="datetime-local" name="created_at">
-            <div class="hint">Leer lassen = aktuelles Datum und aktuelle Uhrzeit</div>
-
-            <button type="submit">Messwert speichern</button>
+            <div>
+                <button type="submit">Messwert speichern</button>
+            </div>
         </form>
-
-        <p style="margin-top:16px;"><a href="admin.php">Zurück zum Admin-Bereich</a></p>
     </div>
 </body>
 </html>
