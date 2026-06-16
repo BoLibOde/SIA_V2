@@ -155,6 +155,11 @@ $co2BarWidth = $dashboardData['summary']['co2BarWidth'];
         dataUrl: 'dashboard_data.php'
     };
 </script>
-<script src="common/js/script.js"></script>
+<script src="common/js/script.js?v=<?= filemtime(__DIR__ . '/common/js/script.js') ?: time() ?>"></script>
+<script>
+    if (typeof refreshDashboardData === 'undefined' || typeof applyDashboardData === 'undefined') {
+        console.warn('Dashboard auto-refresh is not available. The loaded script.js may be stale or incomplete.');
+    }
+</script>
 </body>
 </html>
