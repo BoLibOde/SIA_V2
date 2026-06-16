@@ -1,5 +1,5 @@
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from device.aggregation_service import AggregationService
 from device.config import DeviceConfig
@@ -56,7 +56,7 @@ class DeviceApp:
 
         try:
             while self.running:
-                now = datetime.utcnow()
+                now = datetime.now(UTC)
                 latest = self.sensor_service.get_latest_reading()
                 self.gpio_handler.update()
                 hourly_counts = self.gpio_handler.get_hourly_counts()
@@ -76,20 +76,36 @@ class DeviceApp:
                 if self.ui.action_reset_daily:
                     self.gpio_handler.reset_daily_display_counts()
                     daily_counts = self.gpio_handler.get_daily_display_counts()
-                    self._last_upload_status = f"{datetime.now().strftime('%H:%M')} Tageszähler zurückgesetzt"
+                    self._set_upload_status(now, "Tageszähler zurückgesetzt")
+
+                status_updated = self.ui.action_upload or self.ui.action_reset_daily
 
                 # Live-event track: upload one measurement per button press so
                 # the website reflects mood changes without waiting for the next
                 # hourly aggregate window.
                 live_events = self.gpio_handler.pop_live_events()
-                if live_events and latest is not None:
-                    for mood in live_events:
-                        # upload_live_event() persists the payload on failure
-                        # automatically, so no extra bookkeeping is needed here.
-                        self.upload_service.upload_live_event(mood, latest, now)
+                if live_events:
+                    if latest is None:
+                        self.gpio_handler.requeue_live_events(live_events)
+                        self._set_upload_status(now, f"Live wartet: {len(live_events)} ohne Sensordaten")
+                        status_updated = True
+                    else:
+                        for mood in live_events:
+                            event_time = datetime.now(UTC)
+                            success, status_msg = self.upload_service.upload_live_event(mood, latest, event_time)
+                            self._server_connected = success
+                            if success:
+                                self._set_upload_status(event_time, f"Live: {mood} {status_msg}")
+                            else:
+                                self._set_upload_status(
+                                    event_time,
+                                    f"Live fehlgeschlagen (gepuffert): {mood} {status_msg}",
+                                )
+                            status_updated = True
 
-                self.ui.draw(latest, daily_counts, self._server_connected, self._last_upload_status)
-                self.upload_service.retry_pending_uploads()
+                retried_count, remaining_count = self.upload_service.retry_pending_uploads()
+                if (retried_count or remaining_count) and not status_updated:
+                    self._set_upload_status(now, f"Retry: {retried_count} gesendet, {remaining_count} offen")
                 self._try_hourly_upload(now)
 
                 # Refresh server connection status every ~30 loop ticks
@@ -97,6 +113,8 @@ class DeviceApp:
                 if health_check_counter >= 30:
                     self._server_connected = self.upload_service.check_server_health()
                     health_check_counter = 0
+
+                self.ui.draw(latest, daily_counts, self._server_connected, self._last_upload_status)
 
                 time.sleep(self.config.ui_refresh_seconds)
         except KeyboardInterrupt:
@@ -124,10 +142,12 @@ class DeviceApp:
         Live-event uploads are NOT affected by this call; they run independently
         in the main loop and are not double-counted here.
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         # Step 1: flush existing retry buffer
-        self.upload_service.retry_pending_uploads()
+        retried_count, remaining_count = self.upload_service.retry_pending_uploads()
+        if retried_count or remaining_count:
+            self._set_upload_status(now, f"Retry vor Manuell: {retried_count} gesendet, {remaining_count} offen")
 
         # Step 2: aggregate the window since the last aggregate upload checkpoint
         period_start = self.last_uploaded_hour if self.last_uploaded_hour is not None else now - timedelta(hours=1)
@@ -140,7 +160,7 @@ class DeviceApp:
         )
 
         if payload is None:
-            self._last_upload_status = f"{now.strftime('%H:%M')} Manuell: nichts Neues"
+            self._set_upload_status(now, "Manuell: nichts Neues")
             self._server_connected = self.upload_service.check_server_health()
             return
 
@@ -151,10 +171,10 @@ class DeviceApp:
             # Advance checkpoint so the same window is not uploaded again
             self.last_uploaded_hour = now
             self.gpio_handler.clear_hourly_counts()
-            self._last_upload_status = f"{now.strftime('%H:%M')} Manuell: {status_msg}"
+            self._set_upload_status(now, f"Manuell: {status_msg}")
         else:
             self.upload_service.save_failed_upload(payload)
-            self._last_upload_status = f"{now.strftime('%H:%M')} Manuell fehlgeschlagen: {status_msg}"
+            self._set_upload_status(now, f"Manuell fehlgeschlagen: {status_msg}")
 
     def _try_hourly_upload(self, now: datetime) -> None:
         current_hour = now.replace(minute=0, second=0, microsecond=0)
@@ -176,14 +196,23 @@ class DeviceApp:
             return
 
         success, status_msg = self.upload_service.upload_hourly_payload(payload)
-        self._last_upload_status = f"{now.strftime('%H:%M')} {status_msg}"
         self._server_connected = success
 
         if success:
+            self._set_upload_status(now, f"Stündlich: {status_msg}")
             self.last_uploaded_hour = current_hour
             self.gpio_handler.clear_hourly_counts()
         else:
             self.upload_service.save_failed_upload(payload)
+            self._set_upload_status(now, f"Stündlich fehlgeschlagen: {status_msg}")
+
+    def _set_upload_status(self, moment: datetime, message: str) -> None:
+        if moment.tzinfo is None:
+            timestamp = moment.strftime("%H:%M")
+        else:
+            timestamp = moment.astimezone().strftime("%H:%M")
+        self._last_upload_status = f"{timestamp} {message}"
+        print(self._last_upload_status, flush=True)
 
 
 if __name__ == "__main__":

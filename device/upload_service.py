@@ -82,12 +82,14 @@ class UploadService:
         except requests.RequestException as exc:
             return False, str(exc)
 
-    def retry_pending_uploads(self) -> None:
+    def retry_pending_uploads(self) -> tuple[int, int]:
+        """Retry buffered uploads and return (sent_count, remaining_count)."""
         pending = self._read_pending()
         if not pending:
-            return
+            return 0, 0
 
         still_pending = []
+        sent_count = 0
         for body in pending:
             try:
                 resp = requests.post(
@@ -98,10 +100,13 @@ class UploadService:
                 )
                 if resp.status_code not in (200, 201, 409):
                     still_pending.append(body)
+                else:
+                    sent_count += 1
             except requests.RequestException:
                 still_pending.append(body)
 
         self._write_pending(still_pending)
+        return sent_count, len(still_pending)
 
     def save_failed_upload(self, payload: HourlyUploadPayload) -> None:
         pending = self._read_pending()
