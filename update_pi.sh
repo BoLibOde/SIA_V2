@@ -18,6 +18,7 @@ trap cleanup EXIT
 if [ -f "$ENV_FILE" ]; then
     ENV_BACKUP="$(mktemp -p "$APP_DIR" .env.device.backup.XXXXXX)"
     cp "$ENV_FILE" "$ENV_BACKUP"
+    chmod 600 "$ENV_BACKUP"
 fi
 
 echo "[1/4] Fetching latest code from origin/main..."
