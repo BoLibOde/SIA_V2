@@ -8,6 +8,13 @@ ENV_BACKUP="/tmp/.env.device.backup.$$"
 
 cd "$APP_DIR"
 
+cleanup() {
+    if [ -f "$ENV_BACKUP" ]; then
+        mv "$ENV_BACKUP" "$ENV_FILE"
+    fi
+}
+trap cleanup EXIT
+
 if [ -f "$ENV_FILE" ]; then
     cp "$ENV_FILE" "$ENV_BACKUP"
 fi
@@ -21,10 +28,10 @@ if git show-ref --verify --quiet refs/heads/main; then
 else
     git switch -c main --track origin/main
 fi
-git merge --ff-only origin/main
-
-if [ -f "$ENV_BACKUP" ]; then
-    mv "$ENV_BACKUP" "$ENV_FILE"
+if ! git merge --ff-only origin/main; then
+    echo "Update aborted: local branch cannot fast-forward to origin/main." >&2
+    echo "Please resolve local commits/changes first, then retry ./update_pi.sh." >&2
+    exit 1
 fi
 
 echo "[3/4] Refreshing Python dependencies..."
