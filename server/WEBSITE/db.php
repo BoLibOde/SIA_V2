@@ -7,6 +7,7 @@ $defaults = [
     'user' => 'sia_web',
     'pass' => '',
     'timezone' => '+02:00',
+    'device_ingest_token' => '',
 ];
 
 $configFile = __DIR__ . '/db.local.php';
@@ -16,6 +17,8 @@ if (file_exists($configFile)) {
         $defaults = array_merge($defaults, $localConfig);
     }
 }
+
+$appConfig = $defaults;
 
 $pdo = new PDO(
     sprintf(

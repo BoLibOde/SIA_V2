@@ -1,218 +1,191 @@
-# SIA V2
+# SIA_V2
 
-Clean rebuild of the SIA mood bar-o-meter project.
+## Production reality (active path)
 
-## Repository structure
+This repository contains multiple implementations.  
+**The live production stack is currently:**
 
-```text
-SIA_V2/
-├── README.md
-├── setup.sh
-├── requirements-device.txt
-├── requirements-server.txt
-├── .github/workflows/
-│   ├── ci.yml
-│   └── deploy.yml
-├── device/
-│   ├── config.py           # All settings, overridable via env vars
-│   ├── main.py             # Device entry point
-│   ├── gpio_handler.py     # Button input + debounce (polling-based)
-│   ├── sensor_service.py   # SCD41 sensor or simulation
-│   ├── aggregation_service.py
-│   ├── upload_service.py   # HTTP upload + retry
-│   ├── ui.py               # Pygame display + status bar
-│   ├── models.py
-│   └── assets/
-├── server/
-│   ├── __init__.py
-│   ├── db.py
-│   ├── main.py             # FastAPI app (CORS enabled)
-│   ├── models.py
-│   ├── schemas.py
-│   ├── services/
-│   └── routes/
-├── scripts/
-│   ├── start_client.sh     # Auto-install deps and start device
-│   ├── start_server.sh     # Start server
-│   └── run_device.sh       # Stop service, then run device manually (Pi)
-├── docs/
-└── tests/
+- PHP application (`/server/WEBSITE`)
+- nginx
+- php-fpm
+- MariaDB (`stimmungsbarometer`)
+
+The production webroot on the server is typically:
+
+- `/var/www/html/stimmungsbarometer`
+
+The PHP app reads/writes MariaDB tables including:
+
+- `users`
+- `locations`
+- `measurements`
+- `device_location_history`
+
+---
+
+## Device ingest endpoint for Raspberry Pi (production)
+
+A dedicated machine endpoint now exists in the PHP app:
+
+- `server/WEBSITE/device_ingest.php`
+- deployed path example: `http://<host>/stimmungsbarometer/device_ingest.php`
+
+### Behavior
+
+- `GET` returns JSON health info (`200`).
+- `POST` expects JSON payload.
+- No browser session login is required.
+- Stores one measurement row in `measurements`.
+- Resolves `location_id` from `device_location_history` by `valid_from <= created_at` (latest match).
+- Returns JSON and proper HTTP status codes.
+
+### Optional shared secret (recommended)
+
+Set `device_ingest_token` in `server/WEBSITE/db.local.php` (see `db.local.example.php`) and send it as:
+
+- HTTP header: `X-Device-Token: <token>`
+- (fallback) JSON field: `token`
+
+If configured and missing/invalid, endpoint returns `401`.
+
+### Supported POST JSON formats
+
+1) Direct measurement format:
+
+```json
+{
+  "mood": "neutral",
+  "co2": 640,
+  "humidity": 42.5,
+  "temperature": 21.4,
+  "created_at": "2026-06-16T19:00:00+02:00"
+}
 ```
 
-## Voraussetzungen
+2) Raspberry Pi hourly payload format (from `device/upload_service.py`):
 
-### Python
-- Python 3.11 oder neuer empfohlen
-- optional ein virtuelles Environment (`python -m venv .venv`)
-
-### Server
-- PostgreSQL muss erreichbar sein
-- `DATABASE_URL` muss gesetzt sein, z. B.:
-
-```bash
-export DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/sia_v2"
+```json
+{
+  "device_id": "pi-room-01",
+  "period_start": "2026-06-16T18:00:00+02:00",
+  "period_end": "2026-06-16T19:00:00+02:00",
+  "mood_counts": { "good": 4, "neutral": 2, "bad": 1 },
+  "sensor_avg": {
+    "temperature_c": 21.6,
+    "humidity_pct": 41.9,
+    "co2_ppm": 618
+  },
+  "sample_count": 12
+}
 ```
 
-### Raspberry Pi / Device
-- Raspberry Pi OS / Linux mit Python 3
-- optional Sensor-/GPIO-Hardware
-- für die Verbindung zum Server typischerweise Tailscale
+The endpoint maps hourly payload fields to `measurements` and derives mood from `mood_counts`.
 
-## Server-Setup
+---
 
-```bash
-cd ~/SIA_web
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-server.txt
-export DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/sia_v2"
+## PHP database configuration (production)
+
+Main config file:
+
+- `server/WEBSITE/db.php`
+
+Local override file (not committed):
+
+- `server/WEBSITE/db.local.php`
+
+Example:
+
+```php
+<?php
+return [
+    'host' => 'localhost',
+    'dbname' => 'stimmungsbarometer',
+    'user' => 'sia_web',
+    'pass' => 'CHANGE_ME',
+    'timezone' => '+02:00',
+    'device_ingest_token' => 'CHANGE_ME_DEVICE_TOKEN',
+];
 ```
 
-Weiterführende Doku:
-- [`docs/api.md`](docs/api.md)
-- [`docs/architecture.md`](docs/architecture.md)
-- [`docs/tailscale-setup.md`](docs/tailscale-setup.md)
-- [`docs/deployment_tailscale.md`](docs/deployment_tailscale.md)
+---
 
-## Server starten
+## Raspberry Pi upload configuration
 
-Entwicklungsstart mit Reload:
+Device defaults in `device/config.py` now point to the PHP ingest path:
 
-```bash
-uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
-```
+- `SIA_SERVER_URL` default: `http://100.74.7.35`
+- `SIA_UPLOAD_ENDPOINT` default: `/stimmungsbarometer/device_ingest.php`
+- `SIA_HEALTH_ENDPOINT` default: `/stimmungsbarometer/device_ingest.php`
+- `SIA_DEVICE_TOKEN` optional (sent as `X-Device-Token`)
 
-Start ohne Reload:
+Example override:
 
 ```bash
-uvicorn server.main:app --host 0.0.0.0 --port 8000
-```
-
-Danach erreichbar unter:
-- Root: `http://100.74.7.35:8000/`
-- Health: `http://100.74.7.35:8000/api/v1/health`
-- API-Doku: `http://100.74.7.35:8000/docs`
-
-## Raspberry-Pi-/Device-Setup
-
-Mit dem vorhandenen Setup-Skript:
-
-```bash
-chmod +x setup.sh
-./setup.sh
-```
-
-Oder manuell:
-
-```bash
-cd /home/ebm/Desktop/SIA_V2
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-device.txt
-```
-
-## Device auf dem Raspberry Pi starten (manuell / für Tests)
-
-> **Hinweis:** Falls das Device als systemd-Dienst läuft, diesen zuerst stoppen:
->
-> ```bash
-> sudo systemctl stop sia-device
-> ```
-
-Dann manuell starten:
-
-```bash
-cd /home/ebm/Desktop/SIA_V2
-source .venv/bin/activate
-export SIA_SERVER_URL="http://100.74.7.35:8000"
+export SIA_SERVER_URL="http://YOUR_HOST"
+export SIA_UPLOAD_ENDPOINT="/stimmungsbarometer/device_ingest.php"
+export SIA_HEALTH_ENDPOINT="/stimmungsbarometer/device_ingest.php"
+export SIA_DEVICE_TOKEN="CHANGE_ME_DEVICE_TOKEN"
 python -m device.main
 ```
 
-Oder per Hilfsskript (stoppt den Dienst automatisch):
+---
+
+## Operational checklist (production)
+
+### Services
+
+- [ ] MariaDB running
+- [ ] nginx running
+- [ ] php-fpm running
+
+### Web app reachability
+
+- [ ] `http://127.0.0.1/login.php` returns page (or expected redirect/auth behavior)
+- [ ] `http://127.0.0.1/dashboard.php` reachable after login
+
+### MariaDB checks
+
+- [ ] Database `stimmungsbarometer` exists
+- [ ] Tables `users`, `locations`, `measurements`, `device_location_history` exist
+- [ ] DB credentials in `db.local.php` are valid
+
+### Device ingest checks
+
+- [ ] `GET /stimmungsbarometer/device_ingest.php` returns JSON health
+- [ ] `POST /stimmungsbarometer/device_ingest.php` with valid payload stores a row in `measurements`
+- [ ] Dashboard shows the newly stored measurement
+
+Example test POST:
 
 ```bash
-bash /home/ebm/Desktop/SIA_V2/scripts/run_device.sh
+curl -i -X POST "http://127.0.0.1/stimmungsbarometer/device_ingest.php" \
+  -H "Content-Type: application/json" \
+  -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN" \
+  -d '{
+    "mood":"neutral",
+    "co2":620,
+    "humidity":41.7,
+    "temperature":21.8,
+    "created_at":"2026-06-16T19:00:00+02:00"
+  }'
 ```
 
-## Button-Belegung (BCM-Nummern)
+---
 
-| Funktion | BCM-Pin | Physischer Pin |
-|----------|---------|----------------|
-| Gut      | 27      | 13             |
-| Neutral  | 22      | 15             |
-| Schlecht | 17      | 11             |
+## Python/FastAPI code in this repository (alternate/non-production path)
 
-Alle drei Pins sind als Eingänge mit internem Pull-up konfiguriert.
-Ein Knopfdruck schließt den Pin auf GND (LOW-Signal).
+The repository still contains:
 
-Überschreiben via Umgebungsvariablen:
+- Python device application (`/device`)
+- FastAPI backend (`/server/main.py`, `/server/routes`, SQLAlchemy models)
 
-```bash
-export SIA_GOOD_PIN=27
-export SIA_NEUTRAL_PIN=22
-export SIA_BAD_PIN=17
-```
+This is useful for development/experimentation and remains in the repo, but it is **not the currently active production deployment path** described above.
 
-## Simulationsmodus (lokal, ohne Hardware)
+---
 
-```bash
-cd /path/to/SIA_V2
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-device.txt
-export SIA_SERVER_URL="http://localhost:8000"
-export SIA_SIMULATION=true
-export SIA_FULLSCREEN=false
-python -m device.main
-```
-
-## Tests ausführen
-
-Server-Testabhängigkeiten installieren:
+## Tests
 
 ```bash
 pip install -r requirements-server.txt
-```
-
-Tests starten:
-
-```bash
 pytest
-pytest -v
-pytest tests/test_health.py
 ```
-
-## Kurzcheck für manuelle Prüfung
-
-- Server startet ohne Fehler mit gesetzter `DATABASE_URL`
-- `GET /` liefert Status `ok` und Service `sia-v2-api`
-- `GET /api/v1/health` liefert Status `ok` und einen `timestamp`
-- `http://100.74.7.35:8000/docs` ist erreichbar
-- Device erreicht den Server mit gesetzter `SIA_SERVER_URL`
-- Simulationsmodus startet lokal ohne Hardware mit `SIA_SIMULATION=true`
-
-## Troubleshooting
-
-### `RuntimeError: Failed to add edge detection` / GPIO add_event_detect schlägt fehl
-
-Auf manchen Raspberry Pi 3 Model B Geräten schlägt `RPi.GPIO.add_event_detect()`
-auf allen Pins fehl. Das Device verwendet daher **Polling** statt Interrupts:
-In jedem Loop-Durchgang wird `gpio_handler.update()` aufgerufen, das HIGH→LOW-
-Übergänge an den Button-Pins erkennt und Entprellung (`debounce`) intern umsetzt.
-Der `bouncetime`-Parameter aus der alten Interrupt-Variante entfällt dadurch.
-
-### Dienst läuft bereits / Fehlermeldung beim manuellen Start
-
-Wenn das Device als systemd-Dienst (`sia-device`) konfiguriert ist, muss dieser
-vor einem manuellen `python -m device.main` gestoppt werden:
-
-```bash
-sudo systemctl stop sia-device
-```
-
-## Weitere Dokumentation
-
-- [`docs/api.md`](docs/api.md) – API-Referenz
-- [`docs/architecture.md`](docs/architecture.md) – Architekturüberblick
-- [`docs/tailscale-setup.md`](docs/tailscale-setup.md) – Tailscale-Einrichtung
-- [`docs/deployment_tailscale.md`](docs/deployment_tailscale.md) – Deployment mit systemd/Tailscale

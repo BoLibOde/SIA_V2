@@ -12,6 +12,7 @@ class UploadService:
         server_base_url: str,
         upload_endpoint: str,
         health_endpoint: str = "/api/v1/health",
+        device_token: str = "",
         retry_file: str = "device/pending_uploads.json",
         timeout_seconds: int = 10,
     ) -> None:
@@ -21,12 +22,13 @@ class UploadService:
         self.timeout = timeout_seconds
         self.retry_file = Path(retry_file)
         self.retry_file.parent.mkdir(parents=True, exist_ok=True)
+        self.request_headers = {"X-Device-Token": device_token.strip()} if device_token.strip() else {}
 
     def check_server_health(self) -> bool:
         """Returns True if the server responds to the health endpoint."""
         try:
             url = f"{self.server_base_url}{self.health_endpoint}"
-            resp = requests.get(url, timeout=self.timeout)
+            resp = requests.get(url, headers=self.request_headers, timeout=self.timeout)
             return resp.status_code == 200
         except requests.RequestException:
             return False
@@ -36,7 +38,7 @@ class UploadService:
         url = f"{self.server_base_url}{self.upload_endpoint}"
         body = self._payload_to_dict(payload)
         try:
-            resp = requests.post(url, json=body, timeout=self.timeout)
+            resp = requests.post(url, json=body, headers=self.request_headers, timeout=self.timeout)
             if resp.status_code in (200, 201):
                 return True, "ok"
             if resp.status_code == 409:
@@ -61,6 +63,7 @@ class UploadService:
                 resp = requests.post(
                     f"{self.server_base_url}{self.upload_endpoint}",
                     json=body,
+                    headers=self.request_headers,
                     timeout=self.timeout,
                 )
                 if resp.status_code not in (200, 201, 409):
@@ -103,4 +106,3 @@ class UploadService:
 
     def _write_pending(self, payloads: list[dict]) -> None:
         self.retry_file.write_text(json.dumps(payloads, indent=2), encoding="utf-8")
-
