@@ -13,7 +13,7 @@ if [ ! -x "$START_SCRIPT" ]; then
 fi
 
 if pgrep -f "python -m device.main" >/dev/null 2>&1; then
-    pkill -f "python -m device.main"
+    pkill -TERM -f "python -m device.main"
     checks=0
     while pgrep -f "python -m device.main" >/dev/null 2>&1 && [ "$checks" -lt "$MAX_STOP_CHECKS" ]; do
         checks=$((checks + 1))
@@ -22,8 +22,13 @@ if pgrep -f "python -m device.main" >/dev/null 2>&1; then
 fi
 
 if pgrep -f "python -m device.main" >/dev/null 2>&1; then
-    echo "Could not stop existing device.main process cleanly after $MAX_STOP_CHECKS checks." >&2
-    exit 1
+    echo "Process still running after graceful stop, sending SIGKILL..." >&2
+    pkill -KILL -f "python -m device.main" || true
+    sleep 1
+    if pgrep -f "python -m device.main" >/dev/null 2>&1; then
+        echo "Could not stop existing device.main process cleanly." >&2
+        exit 1
+    fi
 fi
 
 nohup "$START_SCRIPT" >/dev/null 2>&1 &

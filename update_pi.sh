@@ -11,8 +11,8 @@ cd "$APP_DIR"
 cleanup() {
     if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
         if ! mv "$ENV_BACKUP" "$ENV_FILE"; then
-            echo "Warning: failed to restore backup to $ENV_FILE. Removing $ENV_BACKUP." >&2
-            rm -f "$ENV_BACKUP"
+            echo "Warning: failed to restore backup to $ENV_FILE." >&2
+            echo "Backup retained at: $ENV_BACKUP" >&2
         fi
     fi
 }
@@ -43,7 +43,7 @@ echo "[3/4] Refreshing Python dependencies..."
 if [ ! -d "$VENV_DIR" ]; then
     python3 -m venv --system-site-packages "$VENV_DIR"
 fi
-"$VENV_DIR/bin/pip" install --quiet --upgrade -r "$APP_DIR/requirements-device.txt"
+"$VENV_DIR/bin/pip" install --upgrade -r "$APP_DIR/requirements-device.txt"
 
 echo "[4/4] Restarting UI..."
 "$APP_DIR/restart_ui.sh"
