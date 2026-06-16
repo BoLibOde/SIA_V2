@@ -121,8 +121,8 @@ class UploadService:
         without any schema changes.  A mood_counts dict with a single count for
         the pressed mood is used; the server derives the mood label from it.
 
-        On failure the payload is queued in the shared retry file via
-        ``save_failed_dict()``, so no live event is lost while offline.
+        On failure the payload is automatically queued in the shared retry file
+        so no live event is lost while offline.
         """
         mood_counts = {"good": 0, "neutral": 0, "bad": 0}
         if mood in mood_counts:
@@ -143,12 +143,16 @@ class UploadService:
                 return True, "live-ok"
             if resp.status_code == 409:
                 return True, "live-duplicate"
+            self.save_failed_dict(body)
             return False, f"live-http-{resp.status_code}"
         except requests.ConnectionError:
+            self.save_failed_dict(body)
             return False, "live-connection-error"
         except requests.Timeout:
+            self.save_failed_dict(body)
             return False, "live-timeout"
         except requests.RequestException as exc:
+            self.save_failed_dict(body)
             return False, str(exc)
 
     def save_failed_dict(self, body: dict) -> None:

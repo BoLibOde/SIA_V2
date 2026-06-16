@@ -84,21 +84,9 @@ class DeviceApp:
                 live_events = self.gpio_handler.pop_live_events()
                 if live_events and latest is not None:
                     for mood in live_events:
-                        ok, msg = self.upload_service.upload_live_event(mood, latest, now)
-                        if not ok:
-                            # Persist for retry so no live event is lost offline
-                            mood_counts = {"good": 0, "neutral": 0, "bad": 0}
-                            if mood in mood_counts:
-                                mood_counts[mood] = 1
-                            self.upload_service.save_failed_dict({
-                                "mood_counts": mood_counts,
-                                "sensor_avg": {
-                                    "temperature_c": round(latest.temperature_c, 2),
-                                    "humidity_pct": round(latest.humidity_pct, 2),
-                                    "co2_ppm": int(round(latest.co2_ppm)),
-                                },
-                                "created_at": now.isoformat(),
-                            })
+                        # upload_live_event() persists the payload on failure
+                        # automatically, so no extra bookkeeping is needed here.
+                        self.upload_service.upload_live_event(mood, latest, now)
 
                 self.ui.draw(latest, daily_counts, self._server_connected, self._last_upload_status)
                 self.upload_service.retry_pending_uploads()

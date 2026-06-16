@@ -103,6 +103,8 @@ def test_upload_live_event_returns_false_on_connection_error(tmp_path) -> None:
 
     assert ok is False
     assert "connection-error" in status
+    # Failed live event must have been persisted automatically
+    assert len(service._read_pending()) == 1
 
 
 def test_upload_live_event_treats_409_as_success(tmp_path) -> None:
