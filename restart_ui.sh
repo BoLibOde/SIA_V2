@@ -15,7 +15,8 @@ fi
 if pgrep -f "python -m device.main" >/dev/null 2>&1; then
     pkill -f "python -m device.main"
     attempts=0
-    for ((attempts = 1; attempts <= MAX_STOP_CHECKS; attempts++)); do
+    for ((i = 1; i <= MAX_STOP_CHECKS; i++)); do
+        attempts="$i"
         if ! pgrep -f "python -m device.main" >/dev/null 2>&1; then
             break
         fi

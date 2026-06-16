@@ -10,7 +10,10 @@ cd "$APP_DIR"
 
 cleanup() {
     if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
-        mv "$ENV_BACKUP" "$ENV_FILE" || rm -f "$ENV_BACKUP"
+        if ! mv "$ENV_BACKUP" "$ENV_FILE"; then
+            echo "Warning: failed to restore backup to $ENV_FILE. Removing $ENV_BACKUP." >&2
+            rm -f "$ENV_BACKUP"
+        fi
     fi
 }
 trap cleanup EXIT
