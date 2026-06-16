@@ -15,6 +15,8 @@ dist/
 build/
 .env
 .env.*
+!.env.device.example
+.env.device
 
 # Local PHP production secrets — never commit the live config
 server/WEBSITE/db.local.php

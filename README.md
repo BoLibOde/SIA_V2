@@ -120,6 +120,20 @@ return [
 
 ---
 
+## Raspberry Pi runtime/deploy hygiene
+
+For Raspberry Pi desktop autostart + local secret handling, use [`PI_SETUP.md`](PI_SETUP.md).
+
+Quick start:
+
+```bash
+cp .env.device.example .env.device
+./manual_upload_test.sh
+./start_ui.sh
+```
+
+---
+
 ## Raspberry Pi upload configuration
 
 Device defaults in `device/config.py` now point to the PHP ingest path:
