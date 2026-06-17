@@ -124,6 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <a href="add_measurement.php">Messwerte hinzufügen</a>
             <a href="device_location.php">Gerätestandort</a>
             <a href="admin_users.php">Benutzerverwaltung</a>
+            <a href="delete_measurements.php">Messdaten löschen</a>
             <a href="logout.php">Logout</a>
         </div>
 
