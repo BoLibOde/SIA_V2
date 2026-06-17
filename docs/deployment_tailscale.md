@@ -1,190 +1,217 @@
-# SIA V2 – Deployment with Tailscale
+# SIA V2 – Deployment Guide
 
-This guide explains how to deploy the SIA V2 server on Ubuntu and the client on a Raspberry Pi,
-connected over [Tailscale](https://tailscale.com/).
+## Overview
 
-## Devices
-
-| Device         | Tailscale IP    | Role                        |
-|----------------|-----------------|-----------------------------|
-| Ubuntu server  | `100.74.7.35`   | FastAPI + PostgreSQL server |
-| Raspberry Pi   | `100.66.41.59`  | Device client (UI + upload) |
+| Device         | Tailscale IP    | Role                                         |
+|----------------|-----------------|----------------------------------------------|
+| Ubuntu server  | `100.74.7.35`   | PHP app (nginx + php-fpm) + MariaDB          |
+| Raspberry Pi   | `100.66.41.59`  | Device client (Pygame UI + upload)           |
 
 ---
 
-## 1. Ubuntu server setup
+## 1. Ubuntu server setup (PHP + MariaDB)
 
 ### Prerequisites
 
 ```bash
 sudo apt update
-sudo apt install -y git python3 python3-venv python3-pip postgresql tailscale
+sudo apt install -y git nginx php-fpm php-mysql mariadb-server tailscale
 ```
 
 ### Clone the repository
 
 ```bash
-sudo mkdir -p /opt
-cd /opt
-sudo git clone https://github.com/BoLibOde/SIA_V2.git
-sudo chown -R $USER:$USER /opt/SIA_V2
-chmod +x /opt/SIA_V2/scripts/start_server.sh
+cd /var/www/html
+sudo git clone https://github.com/BoLibOde/SIA_V2.git stimmungsbarometer
+sudo chown -R www-data:www-data stimmungsbarometer
 ```
 
-### PostgreSQL setup
+### MariaDB setup
 
 ```bash
-sudo -u postgres psql
+sudo mysql_secure_installation
+sudo mysql -u root -p
 ```
 
-In the psql prompt:
+In the MariaDB prompt:
 
 ```sql
-CREATE DATABASE sia_v2;
-ALTER USER postgres WITH PASSWORD 'postgres';
+CREATE DATABASE stimmungsbarometer CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE USER 'sia_web'@'localhost' IDENTIFIED BY 'CHANGE_ME';
+GRANT ALL PRIVILEGES ON stimmungsbarometer.* TO 'sia_web'@'localhost';
+FLUSH PRIVILEGES;
 \q
 ```
 
-### Install the systemd service
-
-Before installing the service, create the environment file that holds the database credentials.
-This file is only readable by root and the service user, keeping the password out of the service file itself.
+Import the schema:
 
 ```bash
-sudo mkdir -p /etc/sia
-# Adjust the password if you chose a different one during PostgreSQL setup
-echo 'DATABASE_URL=postgresql://postgres:<your-password>@localhost:5432/sia_v2' \
-    | sudo tee /etc/sia/server.env > /dev/null
-sudo chmod 600 /etc/sia/server.env
-sudo chown root:root /etc/sia/server.env
+sudo mysql -u root -p stimmungsbarometer < /var/www/html/stimmungsbarometer/server/stimmungsbarometer.sql
 ```
 
-Then install and enable the service:
+### PHP local config (credentials + device token)
 
 ```bash
-# Replace 'ubuntu' if your user is different
-sudo sed -i "s/^User=ubuntu/User=$(whoami)/" /opt/SIA_V2/deploy/sia-server.service
-sudo sed -i "s/^Group=ubuntu/Group=$(whoami)/" /opt/SIA_V2/deploy/sia-server.service
-
-sudo cp /opt/SIA_V2/deploy/sia-server.service /etc/systemd/system/sia-server.service
-sudo systemctl daemon-reload
-sudo systemctl enable sia-server.service
-sudo systemctl start sia-server.service
-sudo systemctl status sia-server.service
+cd /var/www/html/stimmungsbarometer/server/WEBSITE
+cp db.local.example.php db.local.php
+# edit db.local.php: set host, dbname, user, pass, timezone, device_ingest_token
+sudo chown www-data:www-data db.local.php
+sudo chmod 640 db.local.php
 ```
 
-### Allow port 8000 (if ufw is active)
+`db.local.php` is in `.gitignore` and must never be committed.
+
+### nginx configuration
+
+Point nginx to `server/WEBSITE/` as the document root. Example minimal config:
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+    root /var/www/html/stimmungsbarometer/server/WEBSITE;
+    index index.php;
+
+    location /stimmungsbarometer/ {
+        alias /var/www/html/stimmungsbarometer/server/WEBSITE/;
+        index index.php;
+        location ~ \.php$ {
+            fastcgi_pass unix:/run/php/php-fpm.sock;
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME $request_filename;
+        }
+    }
+}
+```
+
+Then reload:
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### Verify
 
 ```bash
-sudo ufw allow 8000
+curl -i http://127.0.0.1/stimmungsbarometer/device_ingest.php
+# Expected: {"status":"ok","service":"php-device-ingest"}
 ```
 
 ---
 
 ## 2. Raspberry Pi setup
 
-### Clone / update the repository
+### Initial setup
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/BoLibOde/SIA_V2/main/setup.sh)
 ```
 
-Or locally:
+This clones the repo to `~/Desktop/SIA_V2`, creates `.venv`, and installs Python dependencies.
+
+### Configure device environment
 
 ```bash
 cd ~/Desktop/SIA_V2
-git pull
-chmod +x scripts/start_client.sh
+cp .env.device.example .env.device
+# edit .env.device: set SIA_SERVER_URL, SIA_DEVICE_TOKEN (must match server db.local.php)
 ```
 
-### Install the systemd service
+### Desktop autostart
+
+The Pi UI runs as a **desktop application** started via autostart (not systemd).  
+This is required for pygame to access the display session.
+
+Create `~/.config/autostart/sia.desktop`:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=SIA UI
+Exec=/home/ebm/Desktop/SIA_V2/start_ui.sh
+Path=/home/ebm/Desktop/SIA_V2
+```
+
+`start_ui.sh` activates `.venv`, loads `.env.device`, and starts `python -m device.main`.
+Logs are written to `ui-autostart.log` in the repo root.
+
+### Verify
 
 ```bash
-sudo cp ~/Desktop/SIA_V2/deploy/sia-client.service /etc/systemd/system/sia-client.service
-sudo systemctl daemon-reload
-sudo systemctl enable sia-client.service
-sudo systemctl start sia-client.service
-sudo systemctl status sia-client.service
+# Check only one process is running
+pgrep -af "python -m device.main"
+
+# Live logs
+tail -f ~/Desktop/SIA_V2/ui-autostart.log
+
+# Manual upload test
+cd ~/Desktop/SIA_V2
+./manual_upload_test.sh
 ```
 
-> If your Pi user is **not** `pi`, edit `deploy/sia-client.service` and change `User=`, `Group=`,
-> and the paths under `WorkingDirectory` / `ExecStart` before copying.
+> **Important:** There must be exactly **one** `python -m device.main` process.  
+> Multiple instances cause duplicate uploads (dashboard shows +2 per button press).  
+> If you see two processes: `pkill -f "python -m device.main"` then restart with `./start_ui.sh`.
 
 ---
 
-## 3. Tailscale connectivity tests
-
-### From the Raspberry Pi → Ubuntu server
-
-```bash
-# 1. Ping test (Tailscale layer)
-ping 100.74.7.35
-
-# 2. Health check (FastAPI layer)
-curl http://100.74.7.35:8000/api/v1/health
-# Expected: {"status":"ok","timestamp":"..."}
-
-# 3. API docs
-curl http://100.74.7.35:8000/docs
-```
-
-### Test upload (from Pi or any machine with Python + requests)
+## 3. Update flow on the Pi
 
 ```bash
 cd ~/Desktop/SIA_V2
-python3 scripts/test_upload.py
+./update_pi.sh
 ```
 
-Expected output:
+`update_pi.sh` fetches `origin/main`, fast-forwards, refreshes Python deps, and restarts the UI.
 
-```
-POST http://100.74.7.35:8000/api/v1/ingest/hourly
-...
-Status: 200
-Body:   {"status":"ok","stored":true}
-
-✓ Upload successful
-```
-
----
-
-## 4. Environment variable reference
-
-All device settings can be overridden via environment variables without editing source files.
-
-| Variable              | Default                      | Description                              |
-|-----------------------|------------------------------|------------------------------------------|
-| `SIA_SERVER_URL`      | `http://100.74.7.35:8000`    | Server base URL (Tailscale IP/hostname)  |
-| `SIA_DEVICE_ID`       | `pi-room-01`                 | Unique name for this Pi                  |
-| `SIA_SIMULATION`      | `false`                      | Set to `true` for no-hardware dev        |
-| `SIA_FULLSCREEN`      | `true`                       | Set to `false` for windowed mode         |
-| `SIA_UPLOAD_TIMEOUT`  | `10`                         | HTTP timeout in seconds                  |
-| `DATABASE_URL`        | *(set via `/etc/sia/server.env`)* | Server DB connection string |
-
----
-
-## 5. Viewing logs
-
-### Ubuntu server logs
+Manual restart only (no update):
 
 ```bash
-journalctl -u sia-server.service -f
-```
-
-### Raspberry Pi client logs
-
-```bash
-journalctl -u sia-client.service -f
+./restart_ui.sh
+pgrep -af "python -m device.main"
 ```
 
 ---
 
-## 6. Troubleshooting
+## 4. Viewing logs
+
+### Server (nginx + PHP)
+
+```bash
+sudo tail -f /var/log/nginx/error.log
+sudo tail -f /var/log/nginx/access.log
+```
+
+### Raspberry Pi
+
+```bash
+tail -f ~/Desktop/SIA_V2/ui-autostart.log
+```
+
+---
+
+## 5. Troubleshooting
 
 | Symptom | Check |
 |---------|-------|
 | Pi can't reach server | `tailscale ping 100.74.7.35` – both devices must be in the same tailnet |
-| Port blocked | `sudo ufw allow 8000` on the Ubuntu server |
-| Server not starting | Check `journalctl -u sia-server.service` and verify PostgreSQL is running |
-| UI freezes on Pi startup | Make sure `DISPLAY=:0` and `XAUTHORITY` are set; check the service file |
-| `409 Conflict` from test upload | Duplicate for that period – server is working; change `period_start` in the test script |
+| 404 on ingest | Verify `SIA_UPLOAD_ENDPOINT=/stimmungsbarometer/device_ingest.php` in `.env.device` |
+| 401 Unauthorized | `SIA_DEVICE_TOKEN` in `.env.device` must match `device_ingest_token` in `db.local.php` |
+| 422 Unprocessable | No device location set for this timestamp – configure via Admin → Gerätestandort |
+| Dashboard shows +2 per press | Two device.main processes running – kill duplicates and restart |
+| Log fills with "Retry: 0 gesendet, N offen" | Network issue or wrong endpoint – check `.env.device` and server reachability |
+| UI freezes on Pi startup | Pygame needs a display – verify desktop session is running |
+
+---
+
+## 6. FastAPI alternate path (not in production)
+
+The repository contains a Python/FastAPI server (`server/main.py`, `server/routes/`) used
+for local development and testing.  Run it with:
+
+```bash
+pip install -r requirements-server.txt
+uvicorn server.main:app --host 0.0.0.0 --port 8000
+pytest
+```
+
+This is **not** deployed on the production server.  See `docs/api.md` for endpoint details.

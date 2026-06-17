@@ -269,6 +269,86 @@ For full Pi setup instructions see [`PI_SETUP.md`](PI_SETUP.md).
 
 ---
 
+## Troubleshooting (Pi operations)
+
+### Check for duplicate processes (most common cause of +2 per button press)
+
+```bash
+pgrep -af "python -m device.main"
+```
+
+**Expect exactly one line.** If two or more appear, kill them all and restart:
+
+```bash
+pkill -f "python -m device.main"
+cd ~/Desktop/SIA_V2
+./start_ui.sh &
+```
+
+### Check live logs
+
+```bash
+tail -n 100 ~/Desktop/SIA_V2/ui-autostart.log
+tail -f ~/Desktop/SIA_V2/ui-autostart.log
+```
+
+Normal output: sensor readings, successful upload messages.  
+Warning sign: `Retry: 0 gesendet, N offen` repeated without interruption → network or endpoint issue.
+
+### Check the retry buffer
+
+```bash
+cat ~/Desktop/SIA_V2/device/pending_uploads.json
+```
+
+A large or growing file means uploads are failing.  
+Verify `.env.device` is correct and the server is reachable.
+
+### Check `.env.device` is complete
+
+```bash
+cat ~/Desktop/SIA_V2/.env.device
+```
+
+Required keys: `SIA_SERVER_URL`, `SIA_UPLOAD_ENDPOINT`, `SIA_HEALTH_ENDPOINT`, `SIA_DEVICE_TOKEN`, `SIA_DEVICE_ID`.  
+`SIA_SIMULATION` must be absent or `false` when real hardware is connected.
+
+Correct endpoint paths:
+
+```
+SIA_UPLOAD_ENDPOINT=/stimmungsbarometer/device_ingest.php
+SIA_HEALTH_ENDPOINT=/stimmungsbarometer/device_ingest.php
+```
+
+### Manual upload test
+
+```bash
+cd ~/Desktop/SIA_V2
+./manual_upload_test.sh
+```
+
+Expected: HTTP `201 Created` with `{"status":"stored",...}`.
+
+### GPIO / button check
+
+```bash
+raspi-gpio get 17   # bad button
+raspi-gpio get 22   # neutral button
+raspi-gpio get 27   # good button
+```
+
+Stable `level=1` at rest (pull-up active) is correct.  
+Unstable or permanently `level=0` without pressing → check wiring, pull-up resistor, common ground.
+
+### I2C / CO₂ sensor check
+
+```bash
+i2cdetect -y 1      # should show device at 0x62 (SCD41)
+dmesg | grep -i i2c
+```
+
+---
+
 ## Python/FastAPI code in this repository (alternate/non-production path)
 
 The repository still contains:
