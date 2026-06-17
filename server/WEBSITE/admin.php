@@ -92,6 +92,7 @@ if (($_SESSION['role'] ?? '') !== 'admin') {
             <a href="add_measurement.php">Messwerte hinzufügen</a>
             <a href="device_location.php">Gerätestandort</a>
             <a href="admin_users.php">Benutzerverwaltung</a>
+            <a href="delete_measurements.php">Messdaten löschen</a>
             <a href="logout.php">Logout</a>
         </div>
 
@@ -119,6 +120,11 @@ if (($_SESSION['role'] ?? '') !== 'admin') {
             <a class="card" href="admin_users.php">
                 <h2>Benutzerverwaltung</h2>
                 <p>Benutzer und Administratoren verwalten.</p>
+            </a>
+
+            <a class="card" href="delete_measurements.php">
+                <h2>Messdaten löschen</h2>
+                <p>Messdaten gefiltert nach Ort, Zeitraum und Stimmung löschen.</p>
             </a>
         </div>
     </div>
