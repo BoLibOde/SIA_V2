@@ -140,25 +140,6 @@ def test_read_measurement_rejects_temperature_too_high() -> None:
 # SensorService._hardware_loop
 # ---------------------------------------------------------------------------
 
-def _make_failing_smbus(service: SensorService, *, stop_running_on: int = 1) -> type:
-    """Return a mock SMBus class that always raises OSError on construction.
-
-    Sets ``service.running = False`` after *stop_running_on* calls so the
-    outer hardware loop does not run forever.
-    """
-    call_count = 0
-
-    class _FailingSMBus:
-        def __init__(self, bus_id: int) -> None:
-            nonlocal call_count
-            call_count += 1
-            if call_count >= stop_running_on:
-                service.running = False
-            raise OSError("I2C not accessible")
-
-    return _FailingSMBus
-
-
 @patch("device.sensor_service.time.sleep")
 def test_hardware_loop_falls_back_to_simulation_after_all_retries(mock_sleep) -> None:
     """After _INIT_RETRIES consecutive SMBus failures the service falls back to simulation."""

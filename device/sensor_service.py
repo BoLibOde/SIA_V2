@@ -177,8 +177,8 @@ class SensorService:
                             COMMAND_STOP_MEASUREMENT[1:],
                         )
                         time.sleep(0.5)
-                    except Exception:
-                        pass
+                    except OSError as _stop_err:
+                        _LOG.debug("SCD41 pre-reset stop failed (ignored): %s", _stop_err)
 
                     bus.write_i2c_block_data(
                         SCD41_I2C_ADDR,
@@ -234,8 +234,8 @@ class SensorService:
                             COMMAND_STOP_MEASUREMENT[0],
                             COMMAND_STOP_MEASUREMENT[1:],
                         )
-                    except Exception:
-                        pass
+                    except OSError as _stop_err:
+                        _LOG.debug("SCD41 post-loop stop failed (ignored): %s", _stop_err)
 
             except Exception as error:
                 init_failures += 1
