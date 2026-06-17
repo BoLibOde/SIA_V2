@@ -1,74 +1,94 @@
 # Architecture Overview
 
-## Components
+## Production stack (active)
 
 ```
-Raspberry Pi (device/)          Server (server/)          Website (teammate)
-┌──────────────────┐            ┌─────────────────┐       ┌──────────────┐
-│  GPIO buttons    │            │  FastAPI app    │       │  Frontend    │
-│  SCD41 sensor    │──HTTP──▶  │  PostgreSQL DB  │◀─API─│  (any stack) │
-│  Pygame UI       │            │  services/      │       └──────────────┘
-└──────────────────┘            └─────────────────┘
+Raspberry Pi (device/)          Server (server/WEBSITE/)     Browser
+┌──────────────────┐            ┌──────────────────────┐    ┌──────────────┐
+│  GPIO buttons    │            │  PHP app (nginx +    │    │  dashboard   │
+│  SCD41 sensor    │──HTTP──▶  │  php-fpm)            │◀──│  admin       │
+│  Pygame UI       │            │  MariaDB             │    │  login       │
+└──────────────────┘            └──────────────────────┘    └──────────────┘
         │
    Tailscale VPN
         │
-   ─────▶ server
+   ─────▶ server (100.74.7.35)
 ```
 
-## Data flow
+## Data flow (production)
 
-1. Buttons on the device increment local mood counters.
-2. The SCD41 sensor is read every few seconds and buffered.
-3. The device uploads raw hourly measurements and live-feed data to the server.
-4. The server stores those uploads in PostgreSQL, which is the central source of truth.
-5. Aggregation, filtering, history queries, and summaries are calculated server-side via SQL.
-6. JSON files are optional only as a local retry/offline buffer on the device (for example `pending_uploads.json`).
-7. The website polls the server endpoints to display charts, live status, and historical views.
+1. GPIO buttons on the device increment local mood counters; SCD41 sensor is read periodically.
+2. Once per hour the device sends an aggregated payload (`mood_counts`, `sensor_avg`) to `device_ingest.php`.
+   Each button press also triggers an immediate live-event upload via the same endpoint.
+3. `device_ingest.php` writes one row per upload into `measurements` (MariaDB).
+4. The dashboard reads directly from `measurements` via `dashboard_data_service.php`.
+5. Failed uploads are buffered locally in `device/pending_uploads.json` and retried automatically.
 
-## Architecture decision: SQL over JSON filters
+> **Note on double-counting:** The device sends both live-events (one per button press) and hourly
+> aggregates.  Both write to the same `measurements` table without de-duplication, which causes the
+> dashboard to count each press twice.  Keep this in mind when interpreting counts.
 
-- PostgreSQL / SQL is the primary business data system for SIA V2.
-- Devices are intentionally kept simple: they collect button/sensor inputs and send raw data plus live-feed updates.
-- The server is responsible for persistence, filtering, aggregation, and historical evaluation.
-- JSON must not be treated as the main analytical data store; it is only acceptable as a temporary local retry buffer when the device is offline or an upload fails.
+## Architecture decision: SQL over JSON
+
+- MariaDB / SQL is the authoritative data store for SIA V2.
+- JSON (`pending_uploads.json`) is only a local retry buffer for offline/failed uploads.
+- Aggregation, filtering and historical views are handled server-side by PHP/SQL.
 
 ## Directory layout
 
 ```
 SIA_V2/
-├── device/               # Runs on Raspberry Pi
-│   ├── config.py         # All config – can be overridden via env vars
-│   ├── main.py           # Entry point, main loop
-│   ├── gpio_handler.py   # Button input + debounce
-│   ├── sensor_service.py # SCD41 sensor (or simulation)
-│   ├── aggregation_service.py  # Builds hourly payload
-│   ├── upload_service.py # HTTP upload + retry
-│   ├── ui.py             # Pygame display
-│   └── models.py         # Dataclasses shared inside device/
+├── device/                   # Runs on Raspberry Pi
+│   ├── config.py             # All config – overrideable via env vars
+│   ├── main.py               # Entry point, main loop
+│   ├── gpio_handler.py       # Button input + debounce
+│   ├── sensor_service.py     # SCD41 sensor (or simulation)
+│   ├── aggregation_service.py# Builds hourly payload
+│   ├── upload_service.py     # HTTP upload + retry buffer
+│   ├── ui.py                 # Pygame display
+│   └── models.py             # Dataclasses shared inside device/
 │
-├── server/               # Runs on any machine reachable via Tailscale
-│   ├── main.py           # FastAPI app, CORS, startup
-│   ├── db.py             # SQLAlchemy engine / session
-│   ├── models.py         # DB table definitions
-│   ├── schemas.py        # Pydantic request/response models
-│   ├── services/
-│   │   └── summary_service.py  # Calculation logic
-│   └── routes/
-│       ├── health.py     # GET /api/v1/health
-│       ├── ingest.py     # POST /api/v1/ingest/hourly
-│       └── summary.py    # GET summary + history endpoints
+├── server/
+│   ├── WEBSITE/              # ★ PRODUCTION – PHP app served by nginx + php-fpm
+│   │   ├── device_ingest.php # POST endpoint for the Pi (writes measurements)
+│   │   ├── dashboard.php     # Dashboard UI
+│   │   ├── dashboard_data.php / dashboard_data_service.php
+│   │   ├── admin*.php        # Admin pages (locations, users, manual measurements)
+│   │   ├── db.php            # DB config loader
+│   │   └── db.local.php      # Server-local credentials (never committed)
+│   │
+│   ├── main.py               # FastAPI app (alternate/dev – see below)
+│   ├── routes/               # FastAPI routes (alternate/dev)
+│   └── stimmungsbarometer.sql# MariaDB schema + sample data
 │
 └── docs/
-    ├── architecture.md   # This file
-    ├── api.md            # API reference for the website teammate
+    ├── architecture.md       # This file
+    ├── api.md                # Endpoint reference (PHP production + FastAPI alternate)
+    ├── deployment_tailscale.md
     └── tailscale-setup.md
 ```
 
 ## Technology choices
 
-| Layer   | Technology          | Why                              |
-|---------|---------------------|----------------------------------|
-| Device  | Python + Pygame     | Runs on Pi, UI without a browser |
-| Server  | FastAPI + SQLAlchemy| Fast to build, auto docs at /docs|
-| DB      | PostgreSQL          | Simple, reliable                 |
-| Network | Tailscale           | Zero-config VPN for prototype    |
+| Layer   | Technology              | Role                                        |
+|---------|-------------------------|---------------------------------------------|
+| Device  | Python + Pygame         | Runs on Pi, UI without a browser            |
+| Server  | PHP + nginx + php-fpm   | **Production** web app and ingest endpoint  |
+| DB      | MariaDB (`stimmungsbarometer`) | **Production** data store             |
+| Network | Tailscale               | VPN so Pi can reach the server              |
+| Server (alt) | FastAPI + SQLAlchemy | Alternate/development path (not deployed) |
+| DB (alt)| PostgreSQL              | Used only with the FastAPI alternate path   |
+
+## Alternate / development path (non-production)
+
+The repository also contains a Python/FastAPI backend (`server/main.py`, `server/routes/`) and
+corresponding tests (`tests/`).  This code was the original prototype and is retained for
+development and experimentation.  It is **not** deployed in production.
+
+To run the FastAPI server locally:
+
+```bash
+pip install -r requirements-server.txt
+uvicorn server.main:app --host 0.0.0.0 --port 8000
+pytest
+```

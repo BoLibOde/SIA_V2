@@ -1,149 +1,110 @@
 # API Reference
 
-Base URL: `http://<server-ip>:8000`
+## Production endpoint (PHP)
 
-Interactive docs: `http://<server-ip>:8000/docs`
+The active production ingest endpoint is part of the PHP app served by nginx on the server.
 
----
+### Health check
 
-## Health
+**`GET /stimmungsbarometer/device_ingest.php`**
 
-### `GET /api/v1/health`
+Returns `200` with JSON when the PHP app is reachable.
 
-Quick connection test. Returns 200 when the server is running.
-
-**Response**
 ```json
-{
-  "status": "ok",
-  "timestamp": "2024-01-15T10:30:00.000000"
-}
+{ "status": "ok", "service": "php-device-ingest" }
 ```
 
 ---
 
-## Ingest (device → server)
+### Ingest (device → server)
 
-### `POST /api/v1/ingest/hourly`
+**`POST /stimmungsbarometer/device_ingest.php`**
 
-The device POSTs this once per hour.
+The Raspberry Pi sends data here after each button press (live event) and once per hour (aggregate).
 
-**Request body**
+**Authentication (optional, recommended)**
+
+Send the shared secret as the `X-Device-Token` HTTP header.  
+Configure the token in `server/WEBSITE/db.local.php` as `device_ingest_token`.
+
+**Supported request body formats**
+
+1. Direct measurement (single row):
+
+```json
+{
+  "location_id": 1,
+  "mood": "neutral",
+  "co2": 640,
+  "humidity": 42.5,
+  "temperature": 21.4,
+  "created_at": "2026-06-16T19:00:00+02:00"
+}
+```
+
+2. Raspberry Pi hourly aggregate (from `device/upload_service.py`):
+
 ```json
 {
   "device_id": "pi-room-01",
-  "period_start": "2024-01-15T09:00:00",
-  "period_end":   "2024-01-15T10:00:00",
-  "mood_counts": {
-    "good": 12,
-    "neutral": 5,
-    "bad": 3
-  },
+  "period_start": "2026-06-16T18:00:00+02:00",
+  "period_end":   "2026-06-16T19:00:00+02:00",
+  "mood_counts": { "good": 4, "neutral": 2, "bad": 1 },
   "sensor_avg": {
-    "temperature_c": 22.4,
-    "humidity_pct": 48.1,
-    "co2_ppm": 612
+    "temperature_c": 21.6,
+    "humidity_pct": 41.9,
+    "co2_ppm": 618
   },
-  "sample_count": 720
+  "sample_count": 12
 }
 ```
 
-**Response 200**
-```json
-{ "status": "ok", "stored": true }
-```
+Mood is derived from `mood_counts` (highest count wins; ties → `neutral`).  
+`period_end` is used as `created_at`.  
+`location_id` is resolved from `device_location_history` if not supplied.
 
-**Response 409** – upload already exists for this device + period (idempotent, safe to ignore).
+**Response 201** – row stored:
 
----
-
-## Summary (server → website)
-
-### `GET /api/v1/devices/{device_id}/summary`
-
-Aggregated mood + sensor summary for one device.
-
-**Query params**
-| Param  | Values            | Default |
-|--------|-------------------|---------|
-| range  | day / week / month | day    |
-
-**Response 200**
 ```json
 {
-  "device_id": "pi-room-01",
-  "range": "day",
-  "counts": { "good": 42, "neutral": 18, "bad": 7 },
-  "sensor_avg": { "temperature_c": 22.1, "humidity_pct": 47.5, "co2_ppm": 598 },
-  "score": 0.519,
-  "smiley": "good"
+  "status": "stored",
+  "measurement_id": 42,
+  "location_id": 1,
+  "created_at": "2026-06-16 19:00:00"
 }
 ```
 
-`score` is `(good - bad) / total` in [-1, 1].
-`smiley` is `"good"` (score > 0.25) | `"neutral"` | `"bad"` (score < -0.25).
-
-**Response 404** – device not found.
-
----
-
-### `GET /api/v1/summary/global`
-
-Same as above but across **all devices combined**.
-
-**Query params** – same as device summary.
-
-**Response 200**
-```json
-{
-  "range": "day",
-  "device_count": 3,
-  "counts": { "good": 120, "neutral": 55, "bad": 20 },
-  "sensor_avg": { "temperature_c": 21.8, "humidity_pct": 46.0, "co2_ppm": 610 },
-  "score": 0.513,
-  "smiley": "good"
-}
-```
+**Response 400** – missing or invalid fields.  
+**Response 401** – missing/invalid token (only when token is configured).  
+**Response 422** – no device location configured for the given timestamp.  
+**Response 500** – database error.
 
 ---
 
-### `GET /api/v1/devices/{device_id}/history`
+### Dashboard data
 
-Hourly data points for charting / time series.
+The PHP dashboard reads directly from the `measurements` MariaDB table via
+`dashboard_data_service.php`.  There is no separate JSON API for the dashboard;
+it is server-rendered PHP.
 
-**Query params**
-| Param | Range      | Default |
-|-------|------------|---------|
-| hours | 1 – 720    | 24      |
-
-**Response 200**
-```json
-{
-  "device_id": "pi-room-01",
-  "hours": 24,
-  "entries": [
-    {
-      "period_start": "2024-01-15T08:00:00",
-      "period_end":   "2024-01-15T09:00:00",
-      "counts": { "good": 8, "neutral": 3, "bad": 1 },
-      "score": 0.583,
-      "smiley": "good",
-      "avg_temperature_c": 22.3,
-      "avg_co2_ppm": 605
-    }
-  ]
-}
-```
-
-**Response 404** – device not found.
+Available ranges (query parameter `range`): `tag`, `woche`, `monat`, `jahr`, `gesamt`.
 
 ---
 
-## Notes for the website teammate
+## Alternate / development endpoint (FastAPI – not in production)
 
-- All timestamps are **UTC ISO 8601**.
-- CORS is open (`*`) for the prototype – all origins allowed.
-- The server exposes Swagger UI at `/docs` and ReDoc at `/redoc`.
-- Use `/api/v1/health` to show a connection indicator.
-- For a live dashboard, poll `/api/v1/summary/global?range=day` every 30–60 s.
-- For charts, fetch `/api/v1/devices/{id}/history?hours=24` and map `entries` to your charting library.
+The repository contains a FastAPI backend (`server/main.py`, `server/routes/`) that was
+the original prototype.  It is **not deployed** in the current production environment.
+
+Base URL when running locally: `http://localhost:8000`  
+Interactive docs: `http://localhost:8000/docs`
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/v1/health` | Health check |
+| `POST /api/v1/ingest/hourly` | Hourly aggregate ingest |
+| `GET /api/v1/devices/{id}/summary` | Mood + sensor summary |
+| `GET /api/v1/summary/global` | Global summary across all devices |
+| `GET /api/v1/devices/{id}/history` | Time-series history |
+
+See the inline Swagger docs (`/docs`) for full request/response schemas when running locally.

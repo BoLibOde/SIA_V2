@@ -16,8 +16,8 @@ Do not commit it.
 Current example defaults:
 
 - `SIA_SERVER_URL=http://100.74.7.35` (placeholder, environment-specific; set this to the server address your Pi can reach, e.g. Tailscale IP, LAN IP, or DNS name)
-- `SIA_UPLOAD_ENDPOINT=/device_ingest.php`
-- `SIA_HEALTH_ENDPOINT=/device_ingest.php`
+- `SIA_UPLOAD_ENDPOINT=/stimmungsbarometer/device_ingest.php`
+- `SIA_HEALTH_ENDPOINT=/stimmungsbarometer/device_ingest.php`
 
 ## 2) Manual upload test
 
