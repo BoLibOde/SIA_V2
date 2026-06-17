@@ -155,6 +155,36 @@ python -m device.main
 
 ---
 
+## Admin functions (production PHP app)
+
+All admin pages are accessible from the **Admin-Bereich** (`/admin.php` or the equivalent
+deployed URL, e.g. `http://<host>/stimmungsbarometer/admin.php`).  
+Login as admin is required; non-admin users are redirected to the dashboard.
+
+| Page | Path | Description |
+|---|---|---|
+| Admin overview | `admin.php` | Navigation hub for all admin functions |
+| Manage locations | `admin_locations.php` | View, edit, delete locations |
+| Add location | `add_location.php` | Create a new location |
+| Add measurement | `add_measurement.php` | Manually add a measurement row |
+| Device location | `device_location.php` | Record when the device moved to a new location |
+| User management | `admin_users.php` | Create/update users and roles |
+| Delete measurements | `delete_measurements.php` | Filter and delete measurement rows (admin-only, POST-only, preview required before delete) |
+
+### Delete measurements — safety flow
+
+`delete_measurements.php` enforces a mandatory two-step flow:
+
+1. **Set filters** (location, date range, mood) — at least one filter is required.
+2. **Preview**: shows the count of matching rows; a server-side session token is issued.
+3. **Confirm**: tick the checkbox and submit the delete form — the session token must match
+   (prevents bypassing the preview via direct POST).
+4. **Result**: the page shows the number of actually deleted rows.
+
+No deletion is possible via GET requests or without completing the preview step.
+
+---
+
 ## Operational checklist (production)
 
 ### Services
@@ -194,6 +224,48 @@ curl -i -X POST "http://127.0.0.1/stimmungsbarometer/device_ingest.php" \
     "created_at":"2026-06-16T19:00:00+02:00"
   }'
 ```
+
+### Raspberry Pi checks
+
+- [ ] Exactly **one** `device.main` process is running (double instances cause duplicate counts):
+
+  ```bash
+  pgrep -af "python -m device.main"
+  # must show exactly one line
+  ```
+
+  If two lines appear, kill all instances and restart cleanly:
+
+  ```bash
+  pkill -f "python -m device.main"
+  sleep 2
+  cd ~/Desktop/SIA_V2
+  ./start_ui.sh
+  pgrep -af "python -m device.main"   # expect exactly 1
+  ```
+
+- [ ] Upload endpoint reachable from Pi (uses `.env.device` settings):
+
+  ```bash
+  cd ~/Desktop/SIA_V2
+  ./manual_upload_test.sh
+  # expect HTTP 201 and {"status":"stored",...}
+  ```
+
+- [ ] No stuck pending uploads:
+
+  ```bash
+  cat ~/Desktop/SIA_V2/device/pending_uploads.json
+  # normal: empty array [] or small number of entries that clear on next retry
+  ```
+
+- [ ] Log shows no abnormal retry spam:
+
+  ```bash
+  tail -n 40 ~/Desktop/SIA_V2/ui-autostart.log
+  ```
+
+For full Pi setup instructions see [`PI_SETUP.md`](PI_SETUP.md).
 
 ---
 

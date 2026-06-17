@@ -83,6 +83,8 @@ $filterParams = [
     'mood'        => $mood !== '' ? $mood : null,
 ];
 
+$previewToken = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
@@ -95,12 +97,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("SELECT COUNT(*) AS total FROM measurements $where");
             $stmt->execute($bindings);
             $previewCount = (int)$stmt->fetch(PDO::FETCH_ASSOC)['total'];
-            $previewDone = true;
+            $previewDone  = true;
+
+            // Store a one-time token so the delete step can only be reached after a preview.
+            $previewToken = bin2hex(random_bytes(16));
+            $_SESSION['delete_preview'] = [
+                'token'   => $previewToken,
+                'filters' => $filterParams,
+                'count'   => $previewCount,
+            ];
         }
     } elseif ($action === 'delete') {
-        $confirmed = ($_POST['confirm'] ?? '') === 'yes';
+        $confirmed    = ($_POST['confirm'] ?? '') === 'yes';
+        $submittedTok = $_POST['preview_token'] ?? '';
+        $stored       = $_SESSION['delete_preview'] ?? null;
 
-        if (!$confirmed) {
+        // Enforce server-side that a valid preview was performed in this session.
+        if ($stored === null || $submittedTok === '' || !hash_equals($stored['token'], $submittedTok)) {
+            $error = 'Ungültige Sitzung: Bitte zuerst die Vorschau anzeigen, bevor gelöscht wird.';
+        } elseif ($stored['filters'] !== $filterParams) {
+            // Filter values changed between preview and delete – refuse to proceed.
+            $error = 'Die Filterparameter haben sich verändert. Bitte Vorschau erneut ausführen.';
+            unset($_SESSION['delete_preview']);
+        } elseif (!$confirmed) {
             $error = 'Bitte bestätige das Löschen durch Aktivieren der Sicherheitscheckbox.';
         } else {
             [$where, $bindings] = buildWhereClause($filterParams);
@@ -108,6 +127,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($where === '') {
                 $error = 'Bitte mindestens einen Filter setzen.';
             } else {
+                // One-time use: clear the preview token immediately before executing DELETE.
+                unset($_SESSION['delete_preview']);
+
                 $stmt = $pdo->prepare("DELETE FROM measurements $where");
                 $stmt->execute($bindings);
                 $deleted = $stmt->rowCount();
@@ -121,6 +143,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+} elseif (isset($_SESSION['delete_preview'])) {
+    // Clear any stale preview token when the page is loaded via GET (e.g. direct visit or
+    // browser refresh). The token is only valid for the POST round-trip it was created in.
+    unset($_SESSION['delete_preview']);
 }
 ?>
 <!DOCTYPE html>
@@ -310,10 +336,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     <?php if ($previewCount > 0): ?>
                         <form method="post" class="form-grid" onsubmit="return confirm('Wirklich <?= (int)$previewCount ?> Datensatz/-sätze unwiderruflich löschen?');">
-                            <input type="hidden" name="location_id" value="<?= (int)$locationId ?>">
-                            <input type="hidden" name="date_from"   value="<?= htmlspecialchars($dateFrom) ?>">
-                            <input type="hidden" name="date_to"     value="<?= htmlspecialchars($dateTo) ?>">
-                            <input type="hidden" name="mood"        value="<?= htmlspecialchars($mood) ?>">
+                            <input type="hidden" name="location_id"    value="<?= (int)$locationId ?>">
+                            <input type="hidden" name="date_from"      value="<?= htmlspecialchars($dateFrom) ?>">
+                            <input type="hidden" name="date_to"        value="<?= htmlspecialchars($dateTo) ?>">
+                            <input type="hidden" name="mood"           value="<?= htmlspecialchars($mood) ?>">
+                            <input type="hidden" name="preview_token"  value="<?= htmlspecialchars($previewToken) ?>">
 
                             <div class="confirm-check">
                                 <input type="checkbox" name="confirm" id="confirm" value="yes" required>
