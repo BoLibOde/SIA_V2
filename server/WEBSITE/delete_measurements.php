@@ -63,10 +63,23 @@ if ($mood !== '' && !in_array($mood, $allowedMoods, true)) {
     $mood = '';
 }
 
+$dateFromTs = $dateFrom !== '' ? strtotime($dateFrom) : false;
+$dateToTs   = $dateTo   !== '' ? strtotime($dateTo . ' 23:59:59') : false;
+
+if ($dateFrom !== '' && $dateFromTs === false) {
+    $error = 'Ungültiges Datum im Feld „Von".';
+    $dateFrom = '';
+}
+
+if ($dateTo !== '' && $dateToTs === false) {
+    $error = 'Ungültiges Datum im Feld „Bis".';
+    $dateTo = '';
+}
+
 $filterParams = [
     'location_id' => $locationId > 0 ? $locationId : null,
-    'date_from'   => $dateFrom !== '' ? date('Y-m-d H:i:s', strtotime($dateFrom)) : null,
-    'date_to'     => $dateTo   !== '' ? date('Y-m-d H:i:s', strtotime($dateTo . ' 23:59:59')) : null,
+    'date_from'   => $dateFromTs !== false ? date('Y-m-d H:i:s', $dateFromTs) : null,
+    'date_to'     => $dateToTs   !== false ? date('Y-m-d H:i:s', $dateToTs)   : null,
     'mood'        => $mood !== '' ? $mood : null,
 ];
 
@@ -296,7 +309,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <p>Mit den gewählten Filtern würden <strong><?= $previewCount ?> Datensatz/-sätze</strong> gelöscht.</p>
 
                     <?php if ($previewCount > 0): ?>
-                        <form method="post" class="form-grid" onsubmit="return confirm('Wirklich <?= $previewCount ?> Datensatz/-sätze unwiderruflich löschen?');">
+                        <form method="post" class="form-grid" onsubmit="return confirm('Wirklich <?= (int)$previewCount ?> Datensatz/-sätze unwiderruflich löschen?');">
                             <input type="hidden" name="location_id" value="<?= (int)$locationId ?>">
                             <input type="hidden" name="date_from"   value="<?= htmlspecialchars($dateFrom) ?>">
                             <input type="hidden" name="date_to"     value="<?= htmlspecialchars($dateTo) ?>">
