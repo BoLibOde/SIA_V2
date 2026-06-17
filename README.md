@@ -185,7 +185,7 @@ No deletion is possible via GET requests or without completing the preview step.
 
 ---
 
-
+## Operational checklist (production)
 
 ### Services
 
@@ -209,6 +209,21 @@ No deletion is possible via GET requests or without completing the preview step.
 - [ ] `GET /stimmungsbarometer/device_ingest.php` returns JSON health
 - [ ] `POST /stimmungsbarometer/device_ingest.php` with valid payload stores a row in `measurements`
 - [ ] Dashboard shows the newly stored measurement
+
+Example test POST:
+
+```bash
+curl -i -X POST "http://127.0.0.1/stimmungsbarometer/device_ingest.php" \
+  -H "Content-Type: application/json" \
+  -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN" \
+  -d '{
+    "mood":"neutral",
+    "co2":620,
+    "humidity":41.7,
+    "temperature":21.8,
+    "created_at":"2026-06-16T19:00:00+02:00"
+  }'
+```
 
 ### Raspberry Pi checks
 
@@ -251,21 +266,6 @@ No deletion is possible via GET requests or without completing the preview step.
   ```
 
 For full Pi setup instructions see [`PI_SETUP.md`](PI_SETUP.md).
-
-
-
-```bash
-curl -i -X POST "http://127.0.0.1/stimmungsbarometer/device_ingest.php" \
-  -H "Content-Type: application/json" \
-  -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN" \
-  -d '{
-    "mood":"neutral",
-    "co2":620,
-    "humidity":41.7,
-    "temperature":21.8,
-    "created_at":"2026-06-16T19:00:00+02:00"
-  }'
-```
 
 ---
 

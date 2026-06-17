@@ -144,8 +144,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 } elseif (isset($_SESSION['delete_preview'])) {
-    // Carry forward an existing preview token if the admin navigated back (GET).
-    // Only restore if the stored filters are still compatible with current page state.
+    // Clear any stale preview token when the page is loaded via GET (e.g. direct visit or
+    // browser refresh). The token is only valid for the POST round-trip it was created in.
     unset($_SESSION['delete_preview']);
 }
 ?>
