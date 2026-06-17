@@ -12,11 +12,11 @@ class UploadService:
 
     Upload tracks
     -------------
-    1. **Hourly aggregate** – ``upload_hourly_payload()`` sends a full
-       60-minute aggregate (mood counts + sensor averages).  Called by
-       ``_try_hourly_upload()`` in main.py and also used for manual aggregate
-       uploads triggered by the U key.  Failed payloads are queued in the
-       retry file via ``save_failed_upload()``.
+    1. **Hourly aggregate** – ``upload_hourly_payload()`` sends one
+       60-minute sensor-average window. Called by ``_try_hourly_upload()`` in
+       main.py and also used for manual aggregate uploads triggered by the U
+       key. Failed payloads are queued in the retry file via
+       ``save_failed_upload()``.
 
     2. **Live event** – ``upload_live_event()`` sends one measurement per
        button press so the website reflects mood changes quickly.  Uses the
@@ -24,7 +24,8 @@ class UploadService:
 
     3. **Retry buffer** – ``retry_pending_uploads()`` re-sends anything stored
        in ``pending_uploads.json`` (from failed hourly or live-event uploads).
-       Both tracks share the same file; the server endpoint accepts all formats.
+       Both tracks share the same file; the server endpoint accepts both
+       payload types and stores them separately.
 
     Duplicate-avoidance strategy
     ----------------------------
@@ -148,24 +149,24 @@ class UploadService:
     ) -> tuple[bool, str]:
         """Upload a single button-press event immediately (live-event track).
 
-        The payload uses the same format as the hourly aggregate so that the
-        server endpoint (device_ingest.php) can store it in ``measurements``
-        without any schema changes.  A mood_counts dict with a single count for
-        the pressed mood is used; the server derives the mood label from it.
+        The payload uses the direct PHP measurement format so that one button
+        press becomes exactly one mood row in ``measurements``.
 
         On failure the payload is automatically queued in the shared retry file
         so no live event is lost while offline.
         """
-        mood_counts = {"good": 0, "neutral": 0, "bad": 0}
-        if mood in mood_counts:
-            mood_counts[mood] = 1
+        mood_map = {
+            "good": "positiv",
+            "neutral": "neutral",
+            "bad": "negativ",
+        }
+        normalized_mood = mood_map.get(mood, mood)
         body = {
-            "mood_counts": mood_counts,
-            "sensor_avg": {
-                "temperature_c": round(reading.temperature_c, 2),
-                "humidity_pct": round(reading.humidity_pct, 2),
-                "co2_ppm": int(round(reading.co2_ppm)),
-            },
+            "upload_type": "mood_live",
+            "mood": normalized_mood,
+            "temperature": round(reading.temperature_c, 2),
+            "humidity": round(reading.humidity_pct, 2),
+            "co2": int(round(reading.co2_ppm)),
             "created_at": timestamp.isoformat(),
         }
         url = f"{self.server_base_url}{self.upload_endpoint}"
@@ -199,14 +200,10 @@ class UploadService:
 
     def _payload_to_dict(self, payload: HourlyUploadPayload) -> dict:
         return {
+            "upload_type": "sensor_hourly",
             "device_id": payload.device_id,
             "period_start": payload.period_start.isoformat(),
             "period_end": payload.period_end.isoformat(),
-            "mood_counts": {
-                "good": payload.mood_counts.good,
-                "neutral": payload.mood_counts.neutral,
-                "bad": payload.mood_counts.bad,
-            },
             "sensor_avg": {
                 "temperature_c": payload.sensor_avg_temperature_c,
                 "humidity_pct": payload.sensor_avg_humidity_pct,

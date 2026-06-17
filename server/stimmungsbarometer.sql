@@ -112,6 +112,25 @@ INSERT INTO `measurements` (`id`, `location_id`, `mood`, `co2`, `humidity`, `tem
 -- --------------------------------------------------------
 
 --
+-- Tabellenstruktur für Tabelle `sensor_hourly_aggregates`
+--
+
+CREATE TABLE `sensor_hourly_aggregates` (
+  `id` int(11) NOT NULL,
+  `location_id` int(11) NOT NULL,
+  `device_id` varchar(100) NOT NULL DEFAULT '',
+  `period_start` datetime NOT NULL,
+  `period_end` datetime NOT NULL,
+  `co2` int(11) NOT NULL,
+  `humidity` decimal(5,2) NOT NULL,
+  `temperature` decimal(5,2) NOT NULL,
+  `sample_count` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Tabellenstruktur für Tabelle `users`
 --
 
@@ -166,6 +185,14 @@ ALTER TABLE `users`
   ADD UNIQUE KEY `username` (`username`);
 
 --
+-- Indizes für die Tabelle `sensor_hourly_aggregates`
+--
+ALTER TABLE `sensor_hourly_aggregates`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_sensor_hourly_window` (`location_id`,`period_start`,`period_end`),
+  ADD KEY `idx_sensor_hourly_period_start` (`period_start`);
+
+--
 -- AUTO_INCREMENT für exportierte Tabellen
 --
 
@@ -194,6 +221,12 @@ ALTER TABLE `users`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
+-- AUTO_INCREMENT für Tabelle `sensor_hourly_aggregates`
+--
+ALTER TABLE `sensor_hourly_aggregates`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- Constraints der exportierten Tabellen
 --
 
@@ -209,6 +242,12 @@ ALTER TABLE `device_location_history`
 --
 ALTER TABLE `measurements`
   ADD CONSTRAINT `fk_measurements_location` FOREIGN KEY (`location_id`) REFERENCES `locations` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints der Tabelle `sensor_hourly_aggregates`
+--
+ALTER TABLE `sensor_hourly_aggregates`
+  ADD CONSTRAINT `fk_sensor_hourly_location` FOREIGN KEY (`location_id`) REFERENCES `locations` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
