@@ -75,7 +75,7 @@ def test_check_server_health_uses_get_with_headers() -> None:
     assert get_mock.call_args.kwargs["headers"]["X-Device-Token"] == "secret-token"
 
 
-def test_upload_live_event_sends_mood_counts_and_sensor(tmp_path) -> None:
+def test_upload_live_event_sends_direct_measurement_payload(tmp_path) -> None:
     service = _make_service(tmp_path)
     reading = _build_reading()
     ts = datetime(2024, 1, 1, 9, 30, 0)
@@ -87,8 +87,11 @@ def test_upload_live_event_sends_mood_counts_and_sensor(tmp_path) -> None:
     assert ok is True
     assert status == "live-ok"
     body = post_mock.call_args.kwargs["json"]
-    assert body["mood_counts"] == {"good": 1, "neutral": 0, "bad": 0}
-    assert body["sensor_avg"]["co2_ppm"] == 615
+    assert body["upload_type"] == "mood_live"
+    assert body["mood"] == "positiv"
+    assert body["co2"] == 615
+    assert body["humidity"] == 41.0
+    assert body["temperature"] == 21.5
     assert body["created_at"] == ts.isoformat()
 
 
@@ -120,20 +123,23 @@ def test_upload_live_event_treats_409_as_success(tmp_path) -> None:
 
 def test_save_failed_dict_appends_to_retry_file(tmp_path) -> None:
     service = _make_service(tmp_path)
-    body = {"mood_counts": {"good": 1, "neutral": 0, "bad": 0}, "created_at": "2024-01-01T09:30:00"}
+    body = {"upload_type": "mood_live", "mood": "positiv", "co2": 615, "humidity": 41.0, "temperature": 21.5, "created_at": "2024-01-01T09:30:00"}
     service.save_failed_dict(body)
 
     pending = service._read_pending()
     assert len(pending) == 1
-    assert pending[0]["mood_counts"]["good"] == 1
+    assert pending[0]["mood"] == "positiv"
 
 
 def test_save_failed_dict_and_retry_pending_together(tmp_path) -> None:
     """Failed live events stored via save_failed_dict are retried by retry_pending_uploads."""
     service = _make_service(tmp_path)
     body = {
-        "mood_counts": {"good": 0, "neutral": 0, "bad": 1},
-        "sensor_avg": {"temperature_c": 20.0, "humidity_pct": 40.0, "co2_ppm": 600},
+        "upload_type": "mood_live",
+        "mood": "negativ",
+        "temperature": 20.0,
+        "humidity": 40.0,
+        "co2": 600,
         "created_at": "2024-01-01T09:00:00",
     }
     service.save_failed_dict(body)
@@ -215,8 +221,8 @@ def test_retry_pending_uploads_deduplicates_before_sending(tmp_path) -> None:
 def test_retry_pending_uploads_preserves_live_events_during_dedup(tmp_path) -> None:
     """Live-event entries (no period_start) are never dropped by deduplication."""
     service = _make_service(tmp_path)
-    live_a = {"mood_counts": {"good": 1, "neutral": 0, "bad": 0}, "created_at": "2024-01-01T09:30:00"}
-    live_b = {"mood_counts": {"good": 0, "neutral": 1, "bad": 0}, "created_at": "2024-01-01T09:31:00"}
+    live_a = {"upload_type": "mood_live", "mood": "positiv", "co2": 600, "humidity": 40.0, "temperature": 20.0, "created_at": "2024-01-01T09:30:00"}
+    live_b = {"upload_type": "mood_live", "mood": "neutral", "co2": 605, "humidity": 41.0, "temperature": 20.5, "created_at": "2024-01-01T09:31:00"}
     service._write_pending([live_a, live_b])
 
     with patch("device.upload_service.requests.post", return_value=Mock(status_code=201)):
@@ -228,8 +234,8 @@ def test_retry_pending_uploads_preserves_live_events_during_dedup(tmp_path) -> N
 
 def test_retry_pending_uploads_reports_successes_and_remaining_failures(tmp_path) -> None:
     service = _make_service(tmp_path)
-    service.save_failed_dict({"created_at": "2024-01-01T09:00:00", "mood": "neutral", "co2": 600, "humidity": 40, "temperature": 21})
-    service.save_failed_dict({"created_at": "2024-01-01T09:01:00", "mood": "bad", "co2": 610, "humidity": 41, "temperature": 22})
+    service.save_failed_dict({"upload_type": "mood_live", "created_at": "2024-01-01T09:00:00", "mood": "neutral", "co2": 600, "humidity": 40, "temperature": 21})
+    service.save_failed_dict({"upload_type": "mood_live", "created_at": "2024-01-01T09:01:00", "mood": "negativ", "co2": 610, "humidity": 41, "temperature": 22})
 
     responses = [Mock(status_code=201), Mock(status_code=500)]
     with patch("device.upload_service.requests.post", side_effect=responses):
@@ -239,4 +245,22 @@ def test_retry_pending_uploads_reports_successes_and_remaining_failures(tmp_path
     assert remaining_count == 1
     pending = service._read_pending()
     assert len(pending) == 1
-    assert pending[0]["mood"] == "bad"
+    assert pending[0]["mood"] == "negativ"
+
+
+def test_upload_hourly_payload_sends_sensor_only_hourly_format(tmp_path) -> None:
+    service = _make_service(tmp_path)
+    payload = _build_payload()
+
+    with patch("device.upload_service.requests.post", return_value=Mock(status_code=201)) as post_mock:
+        ok, status = service.upload_hourly_payload(payload)
+
+    assert ok is True
+    assert status == "ok"
+    body = post_mock.call_args.kwargs["json"]
+    assert body["upload_type"] == "sensor_hourly"
+    assert body["device_id"] == "pi-room-01"
+    assert body["period_start"] == payload.period_start.isoformat()
+    assert body["period_end"] == payload.period_end.isoformat()
+    assert body["sensor_avg"]["co2_ppm"] == 615
+    assert "mood_counts" not in body

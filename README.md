@@ -19,6 +19,7 @@ The PHP app reads/writes MariaDB tables including:
 - `users`
 - `locations`
 - `measurements`
+- `sensor_hourly_aggregates`
 - `device_location_history`
 
 ---
@@ -35,9 +36,10 @@ A dedicated machine endpoint now exists in the PHP app:
 - `GET` returns JSON health info (`200`).
 - `POST` expects JSON payload.
 - No browser session login is required.
-- Stores one measurement row in `measurements`.
+- Stores **live mood events** in `measurements`.
+- Stores **hourly sensor averages** in `sensor_hourly_aggregates`.
 - Uses `location_id` from payload when provided.
-- Otherwise resolves `location_id` from `device_location_history` by `valid_from <= created_at` (latest match).
+- Otherwise resolves `location_id` from `device_location_history` by the payload timestamp (`created_at` for live events, `period_end` for hourly sensor uploads).
 - Returns JSON and proper HTTP status codes.
 
 ### Optional shared secret (recommended)
@@ -64,14 +66,27 @@ If configured and missing/invalid, endpoint returns `401`.
 }
 ```
 
-2) Raspberry Pi hourly payload format (from `device/upload_service.py`):
+2) Raspberry Pi live mood event format:
 
 ```json
 {
+  "upload_type": "mood_live",
+  "mood": "positiv",
+  "co2": 618,
+  "humidity": 41.9,
+  "temperature": 21.6,
+  "created_at": "2026-06-16T19:03:10+02:00"
+}
+```
+
+3) Raspberry Pi hourly sensor payload format (from `device/upload_service.py`):
+
+```json
+{
+  "upload_type": "sensor_hourly",
   "device_id": "pi-room-01",
   "period_start": "2026-06-16T18:00:00+02:00",
   "period_end": "2026-06-16T19:00:00+02:00",
-  "mood_counts": { "good": 4, "neutral": 2, "bad": 1 },
   "sensor_avg": {
     "temperature_c": 21.6,
     "humidity_pct": 41.9,
@@ -81,8 +96,9 @@ If configured and missing/invalid, endpoint returns `401`.
 }
 ```
 
-The endpoint maps hourly payload fields to `measurements` and derives mood from `mood_counts`.
-For multi-device setups, include `location_id` explicitly in payloads.
+Hourly sensor payloads no longer create mood votes. Legacy hourly payloads that still contain
+`mood_counts` are accepted for compatibility, but the counts are ignored and only the sensor
+hour is stored. For multi-device setups, include `location_id` explicitly in payloads.
 
 ---
 
@@ -201,14 +217,16 @@ No deletion is possible via GET requests or without completing the preview step.
 ### MariaDB checks
 
 - [ ] Database `stimmungsbarometer` exists
-- [ ] Tables `users`, `locations`, `measurements`, `device_location_history` exist
+- [ ] Tables `users`, `locations`, `measurements`, `sensor_hourly_aggregates`, `device_location_history` exist
 - [ ] DB credentials in `db.local.php` are valid
 
 ### Device ingest checks
 
 - [ ] `GET /stimmungsbarometer/device_ingest.php` returns JSON health
-- [ ] `POST /stimmungsbarometer/device_ingest.php` with valid payload stores a row in `measurements`
-- [ ] Dashboard shows the newly stored measurement
+- [ ] `POST /stimmungsbarometer/device_ingest.php` with a live payload stores one row in `measurements`
+- [ ] `POST /stimmungsbarometer/device_ingest.php` with an hourly sensor payload stores one row in `sensor_hourly_aggregates`
+- [ ] Dashboard mood counts change only after a live payload
+- [ ] Dashboard sensor values/charts change after an hourly sensor payload
 
 Example test POST:
 

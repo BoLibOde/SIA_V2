@@ -1,5 +1,5 @@
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from device.aggregation_service import AggregationService
 from device.config import DeviceConfig
@@ -82,7 +82,7 @@ class DeviceApp:
 
                 # Live-event track: upload one measurement per button press so
                 # the website reflects mood changes without waiting for the next
-                # hourly aggregate window.
+                # hourly sensor aggregate window.
                 live_events = self.gpio_handler.pop_live_events()
                 if live_events:
                     if latest is None:
@@ -132,10 +132,11 @@ class DeviceApp:
 
         Upload tracks performed in order:
         1. Retry pending uploads (hourly + live-event failures from the buffer).
-        2. Build an aggregate payload for the window since the last successful
-           aggregate upload and upload it.  The aggregate checkpoint is advanced
-           so the same data is never uploaded twice.
-        3. If there is nothing new to aggregate (no sensor samples in the window),
+        2. Build an aggregate payload for the latest completed sensor hour and
+           upload it. The aggregate checkpoint is advanced so the same hourly
+           window is never uploaded twice.
+        3. If there is nothing new to aggregate (no sensor samples in the
+           completed hour),
            show a 'nothing new' status instead of sending an empty payload.
 
         Live-event uploads are NOT affected by this call; they run independently
@@ -148,14 +149,18 @@ class DeviceApp:
         if retried_count or remaining_count:
             self._set_upload_status(now, f"Retry vor Manuell: {retried_count} gesendet, {remaining_count} offen")
 
-        # Step 2: aggregate the window since the last aggregate upload checkpoint
-        period_start = self.last_uploaded_hour if self.last_uploaded_hour is not None else now - timedelta(hours=1)
-        payload = self.aggregation_service.build_window_payload(
+        # Step 2: upload the latest completed sensor hour only
+        completed_hour = now.replace(minute=0, second=0, microsecond=0)
+        if self.last_uploaded_hour == completed_hour:
+            self._set_upload_status(now, "Manuell: nichts Neues")
+            self._server_connected = self.upload_service.check_server_health()
+            return
+
+        payload = self.aggregation_service.build_hourly_payload(
             device_id=self.config.device_id,
             mood_counts=self.gpio_handler.get_hourly_counts(),
             sensor_samples=self.sensor_service.get_hour_samples(),
-            period_start=period_start,
-            period_end=now,
+            now=now,
         )
 
         if payload is None:
@@ -167,9 +172,7 @@ class DeviceApp:
         self._server_connected = success
 
         if success:
-            # Advance checkpoint so the same window is not uploaded again
-            self.last_uploaded_hour = now
-            self.gpio_handler.clear_hourly_counts()
+            self.last_uploaded_hour = completed_hour
             self._set_upload_status(now, f"Manuell: {status_msg}")
         else:
             self.upload_service.save_failed_upload(payload)
@@ -200,7 +203,6 @@ class DeviceApp:
         if success:
             self._set_upload_status(now, f"Stündlich: {status_msg}")
             self.last_uploaded_hour = current_hour
-            self.gpio_handler.clear_hourly_counts()
         else:
             self.upload_service.save_failed_upload(payload)
             self._set_upload_status(now, f"Stündlich fehlgeschlagen: {status_msg}")

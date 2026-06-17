@@ -37,32 +37,32 @@ function dashboard_get_range_bounds(string $range): array
     return [$start, $end];
 }
 
-function dashboard_build_range_sql(?DateTime $start, ?DateTime $end, array &$params): string
+function dashboard_build_range_sql(?DateTime $start, ?DateTime $end, array &$params, string $column = 'created_at'): string
 {
     $sql = '';
     if ($start !== null) {
-        $sql .= " AND created_at >= :start_date";
+        $sql .= " AND {$column} >= :start_date";
         $params[':start_date'] = $start->format('Y-m-d H:i:s');
     }
     if ($end !== null) {
-        $sql .= " AND created_at < :end_date";
+        $sql .= " AND {$column} < :end_date";
         $params[':end_date'] = $end->format('Y-m-d H:i:s');
     }
     return $sql;
 }
 
-function dashboard_get_group_label_sql(string $range): string
+function dashboard_get_group_label_sql(string $range, string $column = 'created_at'): string
 {
     switch ($range) {
         case 'tag':
-            return "DATE_FORMAT(created_at, '%H:00')";
+            return "DATE_FORMAT({$column}, '%H:00')";
         case 'woche':
         case 'monat':
-            return "DATE_FORMAT(created_at, '%d.%m')";
+            return "DATE_FORMAT({$column}, '%d.%m')";
         case 'jahr':
         case 'gesamt':
         default:
-            return "DATE_FORMAT(created_at, '%m.%Y')";
+            return "DATE_FORMAT({$column}, '%m.%Y')";
     }
 }
 
@@ -95,14 +95,14 @@ function dashboard_fetch_data(PDO $pdo, int $selectedLocationId, string $selecte
 
     [$rangeStart, $rangeEnd] = dashboard_get_range_bounds($selectedRange);
     $baseParams = [':location_id' => $selectedLocationId];
-    $rangeSql = dashboard_build_range_sql($rangeStart, $rangeEnd, $baseParams);
+    $rangeSql = dashboard_build_range_sql($rangeStart, $rangeEnd, $baseParams, 'period_start');
 
     $statsSql = "
         SELECT
             AVG(co2) AS avg_co2,
             AVG(humidity) AS avg_humidity,
             AVG(temperature) AS avg_temperature
-        FROM measurements
+        FROM sensor_hourly_aggregates
         WHERE location_id = :location_id
         {$rangeSql}
     ";
@@ -143,18 +143,18 @@ function dashboard_fetch_data(PDO $pdo, int $selectedLocationId, string $selecte
     }
 
     $chartParams = [':location_id' => $selectedLocationId];
-    $chartRangeSql = dashboard_build_range_sql($rangeStart, $rangeEnd, $chartParams);
-    $groupLabelSql = dashboard_get_group_label_sql($selectedRange);
+    $chartRangeSql = dashboard_build_range_sql($rangeStart, $rangeEnd, $chartParams, 'period_start');
+    $groupLabelSql = dashboard_get_group_label_sql($selectedRange, 'period_start');
 
     $chartSql = "
         SELECT
             {$groupLabelSql} AS label,
             ROUND(AVG(temperature), 1) AS avg_temperature
-        FROM measurements
+        FROM sensor_hourly_aggregates
         WHERE location_id = :location_id
         {$chartRangeSql}
         GROUP BY label
-        ORDER BY MIN(created_at) ASC
+        ORDER BY MIN(period_start) ASC
     ";
 
     $stmt = $pdo->prepare($chartSql);

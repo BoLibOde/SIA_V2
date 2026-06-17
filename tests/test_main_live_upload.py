@@ -110,10 +110,17 @@ class _FakeGpioHandler:
 
 
 class _FakeUploadService:
-    def __init__(self, live_result: tuple[bool, str], retry_result: tuple[int, int]) -> None:
+    def __init__(
+        self,
+        live_result: tuple[bool, str],
+        retry_result: tuple[int, int],
+        hourly_result: tuple[bool, str] = (True, "ok"),
+    ) -> None:
         self.live_result = live_result
         self.retry_result = retry_result
+        self.hourly_result = hourly_result
         self.live_calls: list[tuple[str, SensorReading, datetime]] = []
+        self.hourly_calls: list[object] = []
 
     def check_server_health(self) -> bool:
         return True
@@ -126,7 +133,8 @@ class _FakeUploadService:
         return self.retry_result
 
     def upload_hourly_payload(self, payload) -> tuple[bool, str]:
-        return True, "ok"
+        self.hourly_calls.append(payload)
+        return self.hourly_result
 
     def save_failed_upload(self, payload) -> None:
         pass
@@ -150,7 +158,31 @@ class _FakeUI:
         pass
 
 
-def _build_app(monkeypatch, *, latest_reading: SensorReading | None, queue: list[str], live_result=(True, "live-ok"), retry_result=(0, 0)):
+class _FakeAggregationService:
+    def __init__(self, payload: object | None = "payload") -> None:
+        self.payload = payload
+        self.hourly_calls: list[datetime] = []
+        self.window_called = False
+
+    def build_hourly_payload(self, *, device_id, mood_counts, sensor_samples, now):
+        self.hourly_calls.append(now)
+        return self.payload
+
+    def build_window_payload(self, *args, **kwargs):
+        self.window_called = True
+        raise AssertionError("build_window_payload should not be used for manual uploads")
+
+
+def _build_app(
+    monkeypatch,
+    *,
+    latest_reading: SensorReading | None,
+    queue: list[str],
+    live_result=(True, "live-ok"),
+    retry_result=(0, 0),
+    hourly_result=(True, "ok"),
+    aggregation_payload: object | None = "payload",
+):
     config = SimpleNamespace(
         sensor_interval_seconds=5,
         simulation_mode=True,
@@ -171,13 +203,14 @@ def _build_app(monkeypatch, *, latest_reading: SensorReading | None, queue: list
     )
     sensor_service = _FakeSensorService(latest_reading)
     gpio_handler = _FakeGpioHandler(queue)
-    upload_service = _FakeUploadService(live_result, retry_result)
+    upload_service = _FakeUploadService(live_result, retry_result, hourly_result)
+    aggregation_service = _FakeAggregationService(aggregation_payload)
     ui = _FakeUI()
 
     monkeypatch.setattr(device_main, "DeviceConfig", lambda: config)
     monkeypatch.setattr(device_main, "SensorService", lambda **kwargs: sensor_service)
     monkeypatch.setattr(device_main, "GpioHandler", lambda **kwargs: gpio_handler)
-    monkeypatch.setattr(device_main, "AggregationService", lambda: object())
+    monkeypatch.setattr(device_main, "AggregationService", lambda: aggregation_service)
     monkeypatch.setattr(device_main, "UploadService", lambda **kwargs: upload_service)
     monkeypatch.setattr(device_main, "DeviceUI", lambda **kwargs: ui)
     monkeypatch.setattr(device_main, "time", types.SimpleNamespace(sleep=lambda seconds: None))
@@ -237,3 +270,28 @@ def test_run_surfaces_retry_buffer_activity(monkeypatch) -> None:
     app.run()
 
     assert ui.drawn_statuses[-1].endswith("Retry: 1 gesendet, 2 offen")
+
+
+def test_manual_upload_uses_latest_completed_hour_only(monkeypatch) -> None:
+    reading = SensorReading(
+        temperature_c=21.5,
+        humidity_pct=41.0,
+        co2_ppm=615,
+        timestamp=datetime(2024, 1, 1, 9, 30, 0, tzinfo=UTC),
+    )
+    app, _, upload_service, _ = _build_app(
+        monkeypatch,
+        latest_reading=reading,
+        queue=[],
+    )
+
+    fixed_now = datetime(2024, 1, 1, 12, 34, 56, tzinfo=UTC)
+    fake_datetime = types.SimpleNamespace(now=lambda tz=None: fixed_now)
+    monkeypatch.setattr(device_main, "datetime", fake_datetime)
+
+    app._manual_upload()
+
+    assert app.aggregation_service.hourly_calls == [fixed_now]
+    assert app.aggregation_service.window_called is False
+    assert upload_service.hourly_calls == ["payload"]
+    assert app.last_uploaded_hour == datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
