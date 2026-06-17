@@ -72,7 +72,8 @@ class DeviceApp:
                 # To add physical buttons: check button flags from gpio_handler here
                 # alongside self.ui.action_upload / self.ui.action_reset_daily.
                 if self.ui.action_upload:
-                    self._manual_upload()
+                    self._set_upload_status(now, "Manueller Aggregat-Upload vorübergehend deaktiviert")
+#                    self._manual_upload()
                 if self.ui.action_reset_daily:
                     self.gpio_handler.reset_daily_display_counts()
                     daily_counts = self.gpio_handler.get_daily_display_counts()
@@ -105,7 +106,7 @@ class DeviceApp:
                 retried_count, remaining_count = self.upload_service.retry_pending_uploads()
                 if (retried_count or remaining_count) and not status_updated:
                     self._set_upload_status(now, f"Retry: {retried_count} gesendet, {remaining_count} offen")
-                self._try_hourly_upload(now)
+                #self._try_hourly_upload(now)
 
                 # Refresh server connection status every ~30 loop ticks
                 health_check_counter += 1
