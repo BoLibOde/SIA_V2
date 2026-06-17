@@ -226,7 +226,7 @@ def test_retry_pending_uploads_preserves_live_events_during_dedup(tmp_path) -> N
     assert remaining_count == 0
 
 
-
+def test_retry_pending_uploads_reports_successes_and_remaining_failures(tmp_path) -> None:
     service = _make_service(tmp_path)
     service.save_failed_dict({"created_at": "2024-01-01T09:00:00", "mood": "neutral", "co2": 600, "humidity": 40, "temperature": 21})
     service.save_failed_dict({"created_at": "2024-01-01T09:01:00", "mood": "bad", "co2": 610, "humidity": 41, "temperature": 22})
