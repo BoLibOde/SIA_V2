@@ -35,6 +35,12 @@ class UploadService:
       affect the aggregate checkpoint.
     * A 409 response from the server is treated as success so stale retries do
       not loop endlessly.
+    * ``save_failed_upload`` skips appending if an identical hourly aggregate
+      (same device_id, period_start, period_end) is already queued, preventing
+      repeated failed attempts within the same upload window from growing the
+      retry file.
+    * ``retry_pending_uploads`` deduplicates the pending list on load so that
+      any previously accumulated duplicate entries are collapsed before retrying.
     """
 
     def __init__(
@@ -83,10 +89,17 @@ class UploadService:
             return False, str(exc)
 
     def retry_pending_uploads(self) -> tuple[int, int]:
-        """Retry buffered uploads and return (sent_count, remaining_count)."""
+        """Retry buffered uploads and return (sent_count, remaining_count).
+
+        Duplicate hourly aggregate entries (same device_id + period_start +
+        period_end) accumulated from previous failures are collapsed before
+        retrying so that only one copy of each unique aggregate is sent.
+        """
         pending = self._read_pending()
         if not pending:
             return 0, 0
+
+        pending = self._dedup_pending(pending)
 
         still_pending = []
         sent_count = 0
@@ -109,8 +122,22 @@ class UploadService:
         return sent_count, len(still_pending)
 
     def save_failed_upload(self, payload: HourlyUploadPayload) -> None:
+        """Append a failed hourly aggregate to the retry file.
+
+        Skips the append if an entry for the same device_id/period_start/
+        period_end is already queued, preventing the retry file from growing
+        with many identical copies when the server is temporarily unreachable.
+        """
+        new_entry = self._payload_to_dict(payload)
         pending = self._read_pending()
-        pending.append(self._payload_to_dict(payload))
+        for entry in pending:
+            if (
+                entry.get("device_id") == new_entry["device_id"]
+                and entry.get("period_start") == new_entry["period_start"]
+                and entry.get("period_end") == new_entry["period_end"]
+            ):
+                return
+        pending.append(new_entry)
         self._write_pending(pending)
 
     def upload_live_event(
@@ -187,6 +214,30 @@ class UploadService:
             },
             "sample_count": payload.sample_count,
         }
+
+    def _dedup_pending(self, payloads: list[dict]) -> list[dict]:
+        """Collapse duplicate hourly aggregate entries in the pending list.
+
+        Two entries are considered duplicates when they share the same
+        device_id, period_start, and period_end.  Live-event entries (which
+        have a ``created_at`` field instead of ``period_start``) are kept as-is
+        because each represents a unique button-press event.
+        """
+        seen: set[tuple[str, str, str]] = set()
+        deduped: list[dict] = []
+        for entry in payloads:
+            period_start = entry.get("period_start")
+            if period_start is not None:
+                key = (
+                    entry.get("device_id", ""),
+                    period_start,
+                    entry.get("period_end", ""),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+            deduped.append(entry)
+        return deduped
 
     def _read_pending(self) -> list[dict]:
         if not self.retry_file.exists():

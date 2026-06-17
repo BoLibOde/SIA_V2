@@ -149,6 +149,83 @@ def test_save_failed_dict_and_retry_pending_together(tmp_path) -> None:
     assert len(service._read_pending()) == 0
 
 
+def test_save_failed_upload_deduplicates_identical_hourly_payload(tmp_path) -> None:
+    """save_failed_upload must not append a duplicate when the same hourly window is already queued."""
+    service = _make_service(tmp_path)
+    payload = _build_payload()
+
+    service.save_failed_upload(payload)
+    service.save_failed_upload(payload)  # second call with identical payload
+
+    pending = service._read_pending()
+    assert len(pending) == 1, "duplicate hourly aggregate must not be added twice"
+
+
+def test_save_failed_upload_keeps_different_periods(tmp_path) -> None:
+    """Two payloads with different period_start values are both queued."""
+    from datetime import datetime
+
+    service = _make_service(tmp_path)
+    payload_a = HourlyUploadPayload(
+        device_id="pi-room-01",
+        period_start=datetime(2024, 1, 1, 9, 0, 0),
+        period_end=datetime(2024, 1, 1, 10, 0, 0),
+        mood_counts=MoodCounts(good=1, neutral=0, bad=0),
+        sensor_avg_temperature_c=21.0,
+        sensor_avg_humidity_pct=40.0,
+        sensor_avg_co2_ppm=600,
+        sample_count=10,
+    )
+    payload_b = HourlyUploadPayload(
+        device_id="pi-room-01",
+        period_start=datetime(2024, 1, 1, 10, 0, 0),
+        period_end=datetime(2024, 1, 1, 11, 0, 0),
+        mood_counts=MoodCounts(good=0, neutral=1, bad=0),
+        sensor_avg_temperature_c=22.0,
+        sensor_avg_humidity_pct=41.0,
+        sensor_avg_co2_ppm=620,
+        sample_count=12,
+    )
+
+    service.save_failed_upload(payload_a)
+    service.save_failed_upload(payload_b)
+
+    pending = service._read_pending()
+    assert len(pending) == 2
+
+
+def test_retry_pending_uploads_deduplicates_before_sending(tmp_path) -> None:
+    """retry_pending_uploads collapses duplicate hourly aggregate entries so only one is sent."""
+    service = _make_service(tmp_path)
+    payload = _build_payload()
+    # Manually write 44 identical entries (simulates historical bug)
+    duplicate_entry = service._payload_to_dict(payload)
+    service._write_pending([duplicate_entry] * 44)
+
+    assert len(service._read_pending()) == 44
+
+    with patch("device.upload_service.requests.post", return_value=Mock(status_code=201)):
+        sent_count, remaining_count = service.retry_pending_uploads()
+
+    assert sent_count == 1
+    assert remaining_count == 0
+    assert len(service._read_pending()) == 0
+
+
+def test_retry_pending_uploads_preserves_live_events_during_dedup(tmp_path) -> None:
+    """Live-event entries (no period_start) are never dropped by deduplication."""
+    service = _make_service(tmp_path)
+    live_a = {"mood_counts": {"good": 1, "neutral": 0, "bad": 0}, "created_at": "2024-01-01T09:30:00"}
+    live_b = {"mood_counts": {"good": 0, "neutral": 1, "bad": 0}, "created_at": "2024-01-01T09:31:00"}
+    service._write_pending([live_a, live_b])
+
+    with patch("device.upload_service.requests.post", return_value=Mock(status_code=201)):
+        sent_count, remaining_count = service.retry_pending_uploads()
+
+    assert sent_count == 2
+    assert remaining_count == 0
+
+
 def test_retry_pending_uploads_reports_successes_and_remaining_failures(tmp_path) -> None:
     service = _make_service(tmp_path)
     service.save_failed_dict({"created_at": "2024-01-01T09:00:00", "mood": "neutral", "co2": 600, "humidity": 40, "temperature": 21})

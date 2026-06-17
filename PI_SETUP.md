@@ -75,9 +75,32 @@ chmod +x restart_ui.sh update_pi.sh
 - fetch and fast-forward to `origin/main` in a predictable way
 - preserve local `.env.device`
 - refresh device Python dependencies
-- restart the desktop-launched UI via `restart_ui.sh`
+- **restart the running UI automatically via `restart_ui.sh`** (step 4/4)
+
+> **Important:** After any code change (manual `git pull`, file copy, etc.) the running
+> Python process does **not** pick up new code automatically — it must be restarted.
+> `update_pi.sh` handles this automatically.  If you deploy by any other means, run
+> `./restart_ui.sh` afterwards to apply the changes.
 
 Upload safety note:
 
 - Failed uploads continue to be buffered in `device/pending_uploads.json`
 - The app keeps retrying those pending uploads in the background
+- Duplicate hourly aggregate entries in the buffer are collapsed automatically on
+  the next retry cycle, so a previously oversized queue will shrink on its own
+
+## 6) Manual restart only (no update)
+
+If you only need to restart the app without pulling new code:
+
+```bash
+cd ~/Desktop/SIA_V2
+./restart_ui.sh
+```
+
+After restart, verify with:
+
+```bash
+pgrep -af "python -m device.main"
+tail -n 40 ~/Desktop/SIA_V2/ui-autostart.log
+```
