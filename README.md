@@ -201,6 +201,49 @@ No deletion is possible via GET requests or without completing the preview step.
 
 ---
 
+## Produktionsdaten-Cleanup
+
+Für bereits verfälschte Produktionsdaten gibt es zwei Hilfsdateien:
+
+- `scripts/cleanup_production_data.sh`
+- `scripts/cleanup_production_data.sql`
+
+Der empfohlene Weg ist immer der Shell-Wrapper, weil er **vor dem Cleanup automatisch ein
+vollständiges mysqldump-Backup** anlegt und danach das SQL-Skript ausführt.
+
+### Ausführung auf dem Server
+
+```bash
+sudo bash scripts/cleanup_production_data.sh
+```
+
+### Was das Cleanup macht
+
+1. Vollständiges Datenbank-Backup in `.db-backups/`
+2. Zusätzliche Backup-Tabelle `measurements_backup_cleanup` in MariaDB
+3. Löschen von physikalisch unmöglichen Sensorwerten
+4. Löschen von Messungen mit Zukunfts-Timestamp
+5. Löschen offensichtlicher Dummy-/Testwerte
+6. Löschen von Messungen vor dem dokumentierten Produktionsstart
+7. Deaktivieren bekannter Test-Locations
+8. Neuberechnung von `sensor_hourly_aggregates`
+9. Abschlusskontrolle per SQL-Selects
+
+### Rollback
+
+Falls das Ergebnis nicht korrekt ist, kann der vorherige Stand aus dem automatisch erzeugten
+Dump wiederhergestellt werden:
+
+```bash
+sudo mysql stimmungsbarometer < .db-backups/pre_cleanup_YYYYMMDD_HHMMSS.sql
+```
+
+> Hinweis: `scripts/cleanup_production_data.sql` ist absichtlich für die produktive Datenbank
+> `stimmungsbarometer` geschrieben und sollte nicht ohne vorheriges Backup direkt ausgeführt
+> werden.
+
+---
+
 ## Operational checklist (production)
 
 ### Services
