@@ -41,7 +41,7 @@ class DeviceApp:
 
         self.running = False
         self.last_uploaded_period_end: datetime | None = None
-        self.today_base_counts = MoodCounts()
+        self.today_base_counts: MoodCounts | None = None
         self.today_pending_counts = MoodCounts()
         self.today_uploaded_pending_counts = MoodCounts()
         self.today_counts_date = ""
@@ -261,7 +261,7 @@ class DeviceApp:
             self.today_pending_counts = MoodCounts()
             self.today_uploaded_pending_counts = MoodCounts()
         else:
-            self._reconcile_pending_counts(previous_base, counts)
+            self._reconcile_pending_counts(previous_base or MoodCounts(), counts)
 
         self.today_base_counts = counts
         self.today_counts_date = counts_date
@@ -301,7 +301,10 @@ class DeviceApp:
         if hasattr(counts, mood):
             setattr(counts, mood, getattr(counts, mood) + 1)
 
-    def _get_display_counts(self) -> MoodCounts:
+    def _get_display_counts(self) -> MoodCounts | None:
+        if self.today_base_counts is None:
+            return None
+
         return MoodCounts(
             good=self.today_base_counts.good + self.today_pending_counts.good,
             neutral=self.today_base_counts.neutral + self.today_pending_counts.neutral,

@@ -113,6 +113,14 @@ Returns today's authoritative mood counts for the current location.
 
 Zero-count days still return `200` with zero values.
 
+**Pi terminal check**
+
+```bash
+curl -i \
+  -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN" \
+  "http://YOUR_HOST/stimmungsbarometer/device_today_counts.php?device_id=pi-room-01"
+```
+
 ---
 
 ### Dashboard data

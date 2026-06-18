@@ -157,7 +157,7 @@ class _FakeUI:
         self.action_reset_daily = False
         self._handle_calls = 0
         self.drawn_statuses: list[str] = []
-        self.drawn_counts: list[MoodCounts] = []
+        self.drawn_counts: list[MoodCounts | None] = []
         self.drawn_pending_counts: list[MoodCounts] = []
 
     def handle_events(self) -> bool:
@@ -293,6 +293,27 @@ def test_run_shows_optimistic_pending_counts_when_refresh_fails(monkeypatch) -> 
     app.run()
 
     assert ui.drawn_counts[-1] == MoodCounts(good=6, neutral=1, bad=0)
+    assert ui.drawn_pending_counts[-1] == MoodCounts(good=1, neutral=0, bad=0)
+
+
+def test_run_keeps_counts_uninitialized_until_first_successful_refresh(monkeypatch) -> None:
+    reading = SensorReading(
+        temperature_c=21.5,
+        humidity_pct=41.0,
+        co2_ppm=615,
+        timestamp=datetime(2024, 1, 1, 9, 30, 0, tzinfo=UTC),
+    )
+    app, _, _, ui = _build_app(
+        monkeypatch,
+        latest_reading=reading,
+        queue=["good"],
+        live_result=(False, "live-timeout"),
+        today_counts_results=[(False, None, "", "today-offline")],
+    )
+
+    app.run()
+
+    assert ui.drawn_counts[-1] is None
     assert ui.drawn_pending_counts[-1] == MoodCounts(good=1, neutral=0, bad=0)
 
 
