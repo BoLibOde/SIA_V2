@@ -18,6 +18,9 @@ Raspberry Pi (device/)          Server (server/WEBSITE/)     Browser
 ## Data flow (production)
 
 1. GPIO buttons on the device increment local mood counters; SCD41 sensor is read periodically.
+   The visible Pi UI is started from desktop autostart using `start_ui.sh`; routine restart/deploy
+   uses `restart_ui.sh` / `update_pi.sh`. Run only one `python -m device.main` instance (no parallel
+   `systemd` runtime for `device.main`).
 2. Every 15 minutes the device sends a sensor aggregate payload (`sensor_avg`, `sample_count`) to
    `device_ingest.php` covering the exact completed 15-minute window (HH:00–HH:15, HH:15–HH:30,
    HH:30–HH:45, HH:45–HH+1:00).  Each button press also triggers an immediate live-event upload

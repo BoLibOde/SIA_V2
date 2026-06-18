@@ -1,7 +1,8 @@
 # Raspberry Pi UI runtime + device secret handling
 
 The Raspberry Pi UI should run as a **desktop application** via desktop autostart so the
-Pygame window is visible on the Pi display.
+Pygame window is visible on the Pi display. For a visible UI, this desktop autostart path
+is the single supported runtime model.
 
 Use the repository root helper scripts below.
 
@@ -46,6 +47,7 @@ chmod +x start_ui.sh
 - exports `SIA_SERVER_URL`, `SIA_UPLOAD_ENDPOINT`, `SIA_HEALTH_ENDPOINT`, `SIA_DEVICE_TOKEN`, `SIA_DEVICE_ID`
 - starts `python -m device.main`
 - writes app output to `ui-autostart.log`
+- includes duplicate-start protection (if a `device.main` process already exists, startup is skipped and logged)
 
 ## 4) Desktop autostart
 
@@ -77,7 +79,7 @@ chmod +x restart_ui.sh update_pi.sh
 - fetch and fast-forward to `origin/main` in a predictable way
 - preserve local `.env.device`
 - refresh device Python dependencies
-- restart the running UI automatically via `restart_ui.sh`
+- close the running UI instance and start the updated one via `restart_ui.sh`
 
 > **Important:** After any code change (manual `git pull`, file copy, etc.) the running
 > Python process does **not** pick up new code automatically — it must be restarted.
@@ -111,13 +113,19 @@ Expected result:
 - exactly one process line
 - count = `1`
 
+Upload behavior expected with this runtime:
+
+- Live uploads are the sole source of mood events / mood counts.
+- Periodic uploads are 15-minute sensor aggregates only.
+- Periodic aggregate uploads must not change mood counts.
+
 ## 7) Clean restart
 
 ```bash
-pkill -f "python -m device.main"
-sleep 2
 cd ~/Desktop/SIA_V2
-./start_ui.sh &
+./restart_ui.sh
+pgrep -af "python -m device.main"
+pgrep -fc "python -m device.main"
 ```
 
 ## 8) Retry buffer / stale upload cleanup
@@ -146,7 +154,7 @@ If the file contains old buffered events that you **intentionally want to discar
 pkill -f "python -m device.main"
 printf '[]\n' > ~/Desktop/SIA_V2/device/pending_uploads.json
 cd ~/Desktop/SIA_V2
-./start_ui.sh &
+./restart_ui.sh
 ```
 
 Only do this if you explicitly want to drop old buffered uploads instead of retrying them.

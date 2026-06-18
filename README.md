@@ -167,16 +167,18 @@ The Raspberry Pi UI should run as a **desktop application** started from desktop
 Do **not** run a second `device.main` instance via `systemd` at the same time.
 
 - Keep exactly **one** running `python -m device.main` process.
+- Use `./start_ui.sh` for startup, `./restart_ui.sh` for restart, and `./update_pi.sh` for deploy/update.
 - Desktop autostart is the preferred way when the UI must be visible on the Pi display.
 - A parallel `systemd` service for `device.main` can cause duplicate uploads and inflated dashboard counts.
+- `start_ui.sh` has duplicate-start protection and may log a skip instead of starting a second process.
 
 ### Clean restart on the Pi
 
 ```bash
-pkill -f "python -m device.main"
-sleep 2
 cd ~/Desktop/SIA_V2
-./start_ui.sh &
+./restart_ui.sh
+pgrep -af "python -m device.main"
+pgrep -fc "python -m device.main"
 ```
 
 ### If stale pending uploads must be discarded intentionally
@@ -369,12 +371,13 @@ For full Pi setup instructions see [`PI_SETUP.md`](PI_SETUP.md).
 pgrep -af "python -m device.main"
 ```
 
-**Expect exactly one line.** If two or more appear, kill them all and restart:
+**Expect exactly one line.** If two or more appear, do a helper-script restart:
 
 ```bash
-pkill -f "python -m device.main"
 cd ~/Desktop/SIA_V2
-./start_ui.sh &
+./restart_ui.sh
+pgrep -af "python -m device.main"
+pgrep -fc "python -m device.main"
 ```
 
 ### Check live logs
@@ -400,7 +403,8 @@ If you intentionally want to discard stale buffered uploads, stop the app first 
 ```bash
 pkill -f "python -m device.main"
 printf '[]\n' > ~/Desktop/SIA_V2/device/pending_uploads.json
-./start_ui.sh &
+cd ~/Desktop/SIA_V2
+./restart_ui.sh
 ```
 
 ### Check `.env.device` is complete
