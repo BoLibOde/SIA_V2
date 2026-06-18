@@ -46,8 +46,14 @@ fi
 "$VENV_DIR/bin/pip" install --upgrade -r "$APP_DIR/requirements-device.txt"
 
 echo "[4/4] Restarting UI..."
+# Clear stale buffered upload data so that old mood events from previous runs
+# are not re-uploaded to production after the update. Any events that were
+# never successfully sent will be lost, but this is the safe default:
+# fresh update = clean upload state.
+rm -f "$APP_DIR/device/pending_uploads.json"
 "$APP_DIR/restart_ui.sh"
 
 echo ""
 echo "Update complete."
-echo "Pending failed uploads are retained in device/pending_uploads.json and retried by the app."
+echo "Note: device/pending_uploads.json was cleared to prevent stale buffered"
+echo "events from being re-uploaded after the update."
