@@ -38,8 +38,8 @@ Key variables:
 | Variable             | Example value                              | Description                          |
 |----------------------|--------------------------------------------|--------------------------------------|
 | `SIA_SERVER_URL`     | `http://100.74.7.35`                       | Server base URL (no trailing slash)  |
-| `SIA_UPLOAD_ENDPOINT`| `/stimmungsbarometer/device_ingest.php`    | Ingest path on the server            |
-| `SIA_HEALTH_ENDPOINT`| `/stimmungsbarometer/device_ingest.php`    | Health check path (same endpoint)    |
+| `SIA_UPLOAD_ENDPOINT`| `/device_ingest.php`                       | Ingest path on the server            |
+| `SIA_HEALTH_ENDPOINT`| `/device_ingest.php`                       | Health check path (same endpoint)    |
 | `SIA_DEVICE_TOKEN`   | *(your shared secret)*                     | Must match `device_ingest_token` in `db.local.php` |
 | `SIA_DEVICE_ID`      | `pi-room-01`                               | Unique name for this Pi              |
 | `SIA_SIMULATION`     | `false`                                    | Set to `true` for no-hardware dev    |
@@ -52,7 +52,7 @@ The server runs **PHP + nginx + php-fpm + MariaDB**.  There is no separate Pytho
 process in production.  The ingest endpoint is:
 
 ```
-http://<server-ip>/stimmungsbarometer/device_ingest.php
+http://<server-ip>/device_ingest.php
 ```
 
 ## 5. Verify the connection
@@ -63,7 +63,7 @@ From the Pi:
 ping 100.74.7.35
 
 # PHP ingest health check
-curl -i http://100.74.7.35/stimmungsbarometer/device_ingest.php
+curl -i http://100.74.7.35/device_ingest.php
 # Expected: {"status":"ok","service":"php-device-ingest"}
 
 # Full upload test (requires .env.device to be set)
@@ -74,7 +74,7 @@ cd ~/Desktop/SIA_V2
 ## Troubleshooting
 
 - **Can't reach server:** run `tailscale ping <server-ip>` – if it fails, check that both machines are in the same tailnet.
-- **404 on ingest:** check that `SIA_UPLOAD_ENDPOINT` is `/stimmungsbarometer/device_ingest.php` (not just `/device_ingest.php`).
+- **404 on ingest:** check that `SIA_UPLOAD_ENDPOINT` is `/device_ingest.php` and that `SIA_SERVER_URL` points to the correct host (nginx root is already the app directory).
 - **401 Unauthorized:** the `SIA_DEVICE_TOKEN` in `.env.device` does not match the `device_ingest_token` in `db.local.php` on the server.
 - **422 Unprocessable:** no device location is configured for the current timestamp – set one via Admin → Gerätestandort.
 - **UI freezes on startup:** pygame needs a display – set `SIA_FULLSCREEN=false` and ensure `DISPLAY=:0` on the Pi.

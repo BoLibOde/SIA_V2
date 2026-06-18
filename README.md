@@ -40,7 +40,7 @@ rebuild** the production MariaDB database.
 A dedicated machine endpoint now exists in the PHP app:
 
 - `server/WEBSITE/device_ingest.php`
-- deployed path example: `http://<host>/stimmungsbarometer/device_ingest.php`
+- deployed path example: `http://<host>/device_ingest.php`
 
 ### Behavior
 
@@ -67,7 +67,7 @@ If configured and missing/invalid, endpoint returns `401`.
 The Pi can also read authoritative same-day mood counts from:
 
 - `server/WEBSITE/device_today_counts.php`
-- deployed path example: `http://<host>/stimmungsbarometer/device_today_counts.php?device_id=pi-room-01`
+- deployed path example: `http://<host>/device_today_counts.php?device_id=pi-room-01`
 
 Behavior:
 
@@ -211,18 +211,18 @@ Only do this if you explicitly want to drop old buffered uploads instead of retr
 Device defaults in `device/config.py` now point to the PHP ingest path:
 
 - `SIA_SERVER_URL` default: `http://100.74.7.35`
-- `SIA_UPLOAD_ENDPOINT` default: `/stimmungsbarometer/device_ingest.php`
-- `SIA_HEALTH_ENDPOINT` default: `/stimmungsbarometer/device_ingest.php`
-- `SIA_TODAY_COUNTS_ENDPOINT` default: `/stimmungsbarometer/device_today_counts.php`
+- `SIA_UPLOAD_ENDPOINT` default: `/device_ingest.php`
+- `SIA_HEALTH_ENDPOINT` default: `/device_ingest.php`
+- `SIA_TODAY_COUNTS_ENDPOINT` default: `/device_today_counts.php`
 - `SIA_DEVICE_TOKEN` optional (sent as `X-Device-Token`)
 
 Example override:
 
 ```bash
 export SIA_SERVER_URL="http://YOUR_HOST"
-export SIA_UPLOAD_ENDPOINT="/stimmungsbarometer/device_ingest.php"
-export SIA_HEALTH_ENDPOINT="/stimmungsbarometer/device_ingest.php"
-export SIA_TODAY_COUNTS_ENDPOINT="/stimmungsbarometer/device_today_counts.php"
+export SIA_UPLOAD_ENDPOINT="/device_ingest.php"
+export SIA_HEALTH_ENDPOINT="/device_ingest.php"
+export SIA_TODAY_COUNTS_ENDPOINT="/device_today_counts.php"
 export SIA_DEVICE_TOKEN="CHANGE_ME_DEVICE_TOKEN"
 python -m device.main
 ```
@@ -328,16 +328,16 @@ sudo mysql stimmungsbarometer < .db-backups/pre_cleanup_YYYYMMDD_HHMMSS.sql
 
 ### Device ingest checks
 
-- [ ] `GET /stimmungsbarometer/device_ingest.php` returns JSON health
-- [ ] `POST /stimmungsbarometer/device_ingest.php` with a live payload stores one row in `measurements`
-- [ ] `POST /stimmungsbarometer/device_ingest.php` with an hourly sensor payload stores one row in `sensor_hourly_aggregates`
+- [ ] `GET /device_ingest.php` returns JSON health
+- [ ] `POST /device_ingest.php` with a live payload stores one row in `measurements`
+- [ ] `POST /device_ingest.php` with an hourly sensor payload stores one row in `sensor_hourly_aggregates`
 - [ ] Dashboard mood counts change only after a live payload
 - [ ] Dashboard sensor values/charts change after an hourly sensor payload
 
 Example test POST:
 
 ```bash
-curl -i -X POST "http://127.0.0.1/stimmungsbarometer/device_ingest.php" \
+curl -i -X POST "http://127.0.0.1/device_ingest.php" \
   -H "Content-Type: application/json" \
   -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN" \
   -d '{
@@ -373,7 +373,7 @@ curl -i -X POST "http://127.0.0.1/stimmungsbarometer/device_ingest.php" \
   ```bash
   curl -i \
     -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN" \
-    "http://YOUR_HOST/stimmungsbarometer/device_today_counts.php?device_id=pi-room-01"
+    "http://YOUR_HOST/device_today_counts.php?device_id=pi-room-01"
   # expect HTTP 200 and JSON with status/date/timezone/location_id/device_id/counts/total
   ```
 
@@ -450,8 +450,8 @@ Required keys: `SIA_SERVER_URL`, `SIA_UPLOAD_ENDPOINT`, `SIA_HEALTH_ENDPOINT`, `
 Correct endpoint paths:
 
 ```
-SIA_UPLOAD_ENDPOINT=/stimmungsbarometer/device_ingest.php
-SIA_HEALTH_ENDPOINT=/stimmungsbarometer/device_ingest.php
+SIA_UPLOAD_ENDPOINT=/device_ingest.php
+SIA_HEALTH_ENDPOINT=/device_ingest.php
 ```
 
 ### Manual upload test

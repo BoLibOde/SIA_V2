@@ -6,7 +6,7 @@ The active production ingest endpoint is part of the PHP app served by nginx on 
 
 ### Health check
 
-**`GET /stimmungsbarometer/device_ingest.php`**
+**`GET /device_ingest.php`**
 
 Returns `200` with JSON when the PHP app is reachable.
 
@@ -18,7 +18,7 @@ Returns `200` with JSON when the PHP app is reachable.
 
 ### Ingest (device → server)
 
-**`POST /stimmungsbarometer/device_ingest.php`**
+**`POST /device_ingest.php`**
 
 The Raspberry Pi sends data here after each button press (live event) and once per
 15-minute sensor window (aggregate).
@@ -83,7 +83,7 @@ Sensor aggregate uploads do not create mood rows in `measurements`.
 
 ### Today mood counts (server → device, read-only)
 
-**`GET /stimmungsbarometer/device_today_counts.php?device_id=pi-room-01`**
+**`GET /device_today_counts.php?device_id=pi-room-01`**
 
 Returns today's authoritative mood counts for the current location.
 
@@ -118,7 +118,7 @@ Zero-count days still return `200` with zero values.
 ```bash
 curl -i \
   -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN" \
-  "http://YOUR_HOST/stimmungsbarometer/device_today_counts.php?device_id=pi-room-01"
+  "http://YOUR_HOST/device_today_counts.php?device_id=pi-room-01"
 ```
 
 ---
