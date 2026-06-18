@@ -21,7 +21,7 @@ flowchart LR
         ADMIN[admin*.php]
     end
 
-    subgraph DB[(MariaDB: stimmungsbarometer)]
+    subgraph DB["MariaDB: stimmungsbarometer"]
         MEAS[measurements]
         AGGS[sensor_hourly_aggregates]
         LOC[device_location_history]
