@@ -26,9 +26,9 @@ class DeviceConfig:
     # Production defaults target the PHP website ingest endpoint.
     # For FastAPI development, override via SIA_SERVER_URL/SIA_UPLOAD_ENDPOINT/SIA_HEALTH_ENDPOINT.
     server_base_url: str = field(default_factory=lambda: os.getenv("SIA_SERVER_URL", "http://100.74.7.35"))
-    upload_endpoint: str = field(default_factory=lambda: os.getenv("SIA_UPLOAD_ENDPOINT", "/stimmungsbarometer/device_ingest.php"))
-    health_endpoint: str = field(default_factory=lambda: os.getenv("SIA_HEALTH_ENDPOINT", "/stimmungsbarometer/device_ingest.php"))
-    today_counts_endpoint: str = field(default_factory=lambda: os.getenv("SIA_TODAY_COUNTS_ENDPOINT", "/stimmungsbarometer/device_today_counts.php"))
+    upload_endpoint: str = field(default_factory=lambda: os.getenv("SIA_UPLOAD_ENDPOINT", "/device_ingest.php"))
+    health_endpoint: str = field(default_factory=lambda: os.getenv("SIA_HEALTH_ENDPOINT", "/device_ingest.php"))
+    today_counts_endpoint: str = field(default_factory=lambda: os.getenv("SIA_TODAY_COUNTS_ENDPOINT", "/device_today_counts.php"))
     device_token: str = field(default_factory=lambda: os.getenv("SIA_DEVICE_TOKEN", ""))
 
     upload_timeout_seconds: int = field(default_factory=lambda: int(os.getenv("SIA_UPLOAD_TIMEOUT", "10")))

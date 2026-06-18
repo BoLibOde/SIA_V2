@@ -50,7 +50,7 @@ class UploadService:
         server_base_url: str,
         upload_endpoint: str,
         health_endpoint: str = "/api/v1/health",
-        today_counts_endpoint: str = "/stimmungsbarometer/device_today_counts.php",
+        today_counts_endpoint: str = "/device_today_counts.php",
         device_token: str = "",
         retry_file: str = "device/pending_uploads.json",
         timeout_seconds: int = 10,

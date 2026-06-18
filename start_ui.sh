@@ -15,8 +15,8 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 : "${SIA_SERVER_URL:?Set SIA_SERVER_URL in .env.device}"
-: "${SIA_UPLOAD_ENDPOINT:=/stimmungsbarometer/device_ingest.php}"
-: "${SIA_HEALTH_ENDPOINT:=/stimmungsbarometer/device_ingest.php}"
+: "${SIA_UPLOAD_ENDPOINT:=/device_ingest.php}"
+: "${SIA_HEALTH_ENDPOINT:=/device_ingest.php}"
 : "${SIA_DEVICE_TOKEN:=}"
 : "${SIA_DEVICE_ID:=pi-room-01}"
 
