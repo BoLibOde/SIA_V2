@@ -18,15 +18,21 @@ Raspberry Pi (device/)          Server (server/WEBSITE/)     Browser
 ## Data flow (production)
 
 1. GPIO buttons on the device increment local mood counters; SCD41 sensor is read periodically.
-2. Once per hour the device sends an aggregated payload (`mood_counts`, `sensor_avg`) to `device_ingest.php`.
-   Each button press also triggers an immediate live-event upload via the same endpoint.
-3. `device_ingest.php` writes one row per upload into `measurements` (MariaDB).
-4. The dashboard reads directly from `measurements` via `dashboard_data_service.php`.
+2. Every 15 minutes the device sends a sensor aggregate payload (`sensor_avg`, `sample_count`) to
+   `device_ingest.php` covering the exact completed 15-minute window (HH:00–HH:15, HH:15–HH:30,
+   HH:30–HH:45, HH:45–HH+1:00).  Each button press also triggers an immediate live-event upload
+   via the same endpoint.
+3. `device_ingest.php` writes live events into `measurements` and sensor aggregates into
+   `sensor_hourly_aggregates` (MariaDB).  The two tracks are strictly separated: sensor aggregates
+   do **not** create mood votes.
+4. The dashboard reads mood counts from `measurements` and sensor data from
+   `sensor_hourly_aggregates` via `dashboard_data_service.php`.
 5. Failed uploads are buffered locally in `device/pending_uploads.json` and retried automatically.
+   Duplicate aggregate submissions (same `location_id + period_start + period_end`) are rejected
+   by the server with `409` and treated as success on the device side.
 
-> **Note on double-counting:** The device sends both live-events (one per button press) and hourly
-> aggregates.  Both write to the same `measurements` table without de-duplication, which causes the
-> dashboard to count each press twice.  Keep this in mind when interpreting counts.
+> **No double-counting:** Live uploads are the sole source of mood measurements.  Sensor aggregate
+> uploads write only to `sensor_hourly_aggregates` and never affect mood counts.
 
 ## Architecture decision: SQL over JSON
 
@@ -43,7 +49,7 @@ SIA_V2/
 │   ├── main.py               # Entry point, main loop
 │   ├── gpio_handler.py       # Button input + debounce
 │   ├── sensor_service.py     # SCD41 sensor (or simulation)
-│   ├── aggregation_service.py# Builds hourly payload
+│   ├── aggregation_service.py# Builds 15-min sensor aggregate payload
 │   ├── upload_service.py     # HTTP upload + retry buffer
 │   ├── ui.py                 # Pygame display
 │   └── models.py             # Dataclasses shared inside device/

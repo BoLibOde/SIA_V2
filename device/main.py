@@ -38,7 +38,7 @@ class DeviceApp:
         )
 
         self.running = False
-        self.last_uploaded_hour: datetime | None = None
+        self.last_uploaded_period_end: datetime | None = None
 
         # Status shown in the UI status bar
         self._server_connected: bool = False
@@ -72,8 +72,7 @@ class DeviceApp:
                 # To add physical buttons: check button flags from gpio_handler here
                 # alongside self.ui.action_upload / self.ui.action_reset_daily.
                 if self.ui.action_upload:
-                    self._set_upload_status(now, "Manueller Aggregat-Upload vorübergehend deaktiviert")
-#                    self._manual_upload()
+                    self._manual_upload()
                 if self.ui.action_reset_daily:
                     self.gpio_handler.reset_daily_display_counts()
                     daily_counts = self.gpio_handler.get_daily_display_counts()
@@ -106,7 +105,7 @@ class DeviceApp:
                 retried_count, remaining_count = self.upload_service.retry_pending_uploads()
                 if (retried_count or remaining_count) and not status_updated:
                     self._set_upload_status(now, f"Retry: {retried_count} gesendet, {remaining_count} offen")
-                #self._try_hourly_upload(now)
+                self._try_periodic_sensor_upload(now)
 
                 # Refresh server connection status every ~30 loop ticks
                 health_check_counter += 1
@@ -132,13 +131,13 @@ class DeviceApp:
         """Manual aggregate upload triggered by the U key.
 
         Upload tracks performed in order:
-        1. Retry pending uploads (hourly + live-event failures from the buffer).
-        2. Build an aggregate payload for the latest completed sensor hour and
-           upload it. The aggregate checkpoint is advanced so the same hourly
-           window is never uploaded twice.
+        1. Retry pending uploads (live-event + aggregate failures from the buffer).
+        2. Build an aggregate payload for the latest completed 15-minute sensor
+           window and upload it. The aggregate checkpoint is advanced so the
+           same window is never uploaded twice.
         3. If there is nothing new to aggregate (no sensor samples in the
-           completed hour),
-           show a 'nothing new' status instead of sending an empty payload.
+           completed window), show a 'nothing new' status instead of sending an
+           empty payload.
 
         Live-event uploads are NOT affected by this call; they run independently
         in the main loop and are not double-counted here.
@@ -150,16 +149,16 @@ class DeviceApp:
         if retried_count or remaining_count:
             self._set_upload_status(now, f"Retry vor Manuell: {retried_count} gesendet, {remaining_count} offen")
 
-        # Step 2: upload the latest completed sensor hour only
-        completed_hour = now.replace(minute=0, second=0, microsecond=0)
-        if self.last_uploaded_hour == completed_hour:
+        # Step 2: upload the latest completed 15-minute sensor window only
+        quarter = (now.minute // 15) * 15
+        period_end = now.replace(minute=quarter, second=0, microsecond=0)
+        if self.last_uploaded_period_end == period_end:
             self._set_upload_status(now, "Manuell: nichts Neues")
             self._server_connected = self.upload_service.check_server_health()
             return
 
-        payload = self.aggregation_service.build_hourly_payload(
+        payload = self.aggregation_service.build_15min_payload(
             device_id=self.config.device_id,
-            mood_counts=self.gpio_handler.get_hourly_counts(),
             sensor_samples=self.sensor_service.get_hour_samples(),
             now=now,
         )
@@ -173,24 +172,38 @@ class DeviceApp:
         self._server_connected = success
 
         if success:
-            self.last_uploaded_hour = completed_hour
+            self.last_uploaded_period_end = period_end
             self._set_upload_status(now, f"Manuell: {status_msg}")
+            self.sensor_service.discard_samples_before(period_end)
         else:
             self.upload_service.save_failed_upload(payload)
             self._set_upload_status(now, f"Manuell fehlgeschlagen: {status_msg}")
 
-    def _try_hourly_upload(self, now: datetime) -> None:
-        current_hour = now.replace(minute=0, second=0, microsecond=0)
+    def _try_periodic_sensor_upload(self, now: datetime) -> None:
+        """Trigger a 15-minute sensor aggregate upload.
 
-        if now.minute != 0 or now.second > 5:
+        Fires within the first 5 seconds after every 15-minute boundary
+        (HH:00, HH:15, HH:30, HH:45).  The same completed window is never
+        uploaded twice: the checkpoint ``last_uploaded_period_end`` is
+        advanced only after a successful upload.
+
+        On failure the payload is queued for retry via
+        ``save_failed_upload``; the checkpoint is NOT advanced so the same
+        window can be retried in the next matching loop tick.
+
+        After a successful upload all sensor samples older than
+        ``period_end`` are discarded so they cannot re-appear in a later
+        aggregate window.
+        """
+        if now.minute % 15 != 0 or now.second > 5:
             return
 
-        if self.last_uploaded_hour == current_hour:
+        period_end = now.replace(second=0, microsecond=0)
+        if self.last_uploaded_period_end == period_end:
             return
 
-        payload = self.aggregation_service.build_hourly_payload(
+        payload = self.aggregation_service.build_15min_payload(
             device_id=self.config.device_id,
-            mood_counts=self.gpio_handler.get_hourly_counts(),
             sensor_samples=self.sensor_service.get_hour_samples(),
             now=now,
         )
@@ -202,11 +215,12 @@ class DeviceApp:
         self._server_connected = success
 
         if success:
-            self._set_upload_status(now, f"Stündlich: {status_msg}")
-            self.last_uploaded_hour = current_hour
+            self._set_upload_status(now, f"Aggregat: {status_msg}")
+            self.last_uploaded_period_end = period_end
+            self.sensor_service.discard_samples_before(period_end)
         else:
             self.upload_service.save_failed_upload(payload)
-            self._set_upload_status(now, f"Stündlich fehlgeschlagen: {status_msg}")
+            self._set_upload_status(now, f"Aggregat fehlgeschlagen: {status_msg}")
 
     def _set_upload_status(self, moment: datetime, message: str) -> None:
         if moment.tzinfo is None:

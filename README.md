@@ -48,9 +48,9 @@ A dedicated machine endpoint now exists in the PHP app:
 - `POST` expects JSON payload.
 - No browser session login is required.
 - Stores **live mood events** in `measurements`.
-- Stores **hourly sensor averages** in `sensor_hourly_aggregates`.
+- Stores **15-minute sensor averages** in `sensor_hourly_aggregates`.
 - Uses `location_id` from payload when provided.
-- Otherwise resolves `location_id` from `device_location_history` by the payload timestamp (`created_at` for live events, `period_end` for hourly sensor uploads).
+- Otherwise resolves `location_id` from `device_location_history` by the payload timestamp (`created_at` for live events, `period_end` for sensor aggregate uploads).
 - Returns JSON and proper HTTP status codes.
 
 ### Optional shared secret (recommended)
@@ -90,13 +90,13 @@ If configured and missing/invalid, endpoint returns `401`.
 }
 ```
 
-3) Raspberry Pi hourly sensor payload format (from `device/upload_service.py`):
+3) Raspberry Pi 15-minute sensor aggregate payload format (from `device/upload_service.py`):
 
 ```json
 {
   "upload_type": "sensor_hourly",
   "device_id": "pi-room-01",
-  "period_start": "2026-06-16T18:00:00+02:00",
+  "period_start": "2026-06-16T18:45:00+02:00",
   "period_end": "2026-06-16T19:00:00+02:00",
   "sensor_avg": {
     "temperature_c": 21.6,
@@ -107,9 +107,11 @@ If configured and missing/invalid, endpoint returns `401`.
 }
 ```
 
-Hourly sensor payloads no longer create mood votes. Legacy hourly payloads that still contain
-`mood_counts` are accepted for compatibility, but the counts are ignored and only the sensor
-hour is stored. For multi-device setups, include `location_id` explicitly in payloads.
+Sensor aggregate payloads do not create mood votes. The `period_end – period_start` interval is
+15 minutes (windows: `HH:00–HH:15`, `HH:15–HH:30`, `HH:30–HH:45`, `HH:45–HH+1:00`).
+Each completed window produces at most one stored row (server enforces uniqueness via
+`UNIQUE KEY (location_id, period_start, period_end)`; duplicate submissions receive `409`).
+For multi-device setups, include `location_id` explicitly in payloads.
 
 ---
 
