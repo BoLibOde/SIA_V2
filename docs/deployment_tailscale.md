@@ -11,6 +11,10 @@
 
 ## 1. Ubuntu-Server-Setup (PHP + MariaDB)
 
+Für eine **vollständige** Ubuntu-Server-Basisinstallation inklusive benötigter Pakete,
+Apache-Hinweis, optionalem Python-Setup, Firewall und Verifikation siehe
+[`ubuntu-server-setup.md`](ubuntu-server-setup.md).
+
 ### Voraussetzungen
 
 ```bash

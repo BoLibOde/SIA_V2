@@ -10,6 +10,10 @@ Dieses Repository enthält mehrere Implementierungen.
 - php-fpm
 - MariaDB (`stimmungsbarometer`)
 
+Für eine vollständige Ubuntu-Server-Einrichtung siehe auch
+[`docs/ubuntu-server-setup.md`](docs/ubuntu-server-setup.md). Dort ist auch klar dokumentiert,
+dass produktiv **nginx + php-fpm + MariaDB** benötigt werden und **Apache nicht erforderlich** ist.
+
 Das Produktions-Webroot auf dem Server ist typischerweise:
 
 - `/var/www/html/stimmungsbarometer`
@@ -198,8 +202,7 @@ pgrep -fc "python -m device.main"
 ### Wenn veraltete Pending-Uploads bewusst verworfen werden sollen
 
 ```bash
-printf '[]
-' > ~/Desktop/SIA_V2/device/pending_uploads.json
+printf '[]\n' > ~/Desktop/SIA_V2/device/pending_uploads.json
 ```
 
 Das nur tun, wenn alte gepufferte Uploads ausdrücklich verworfen statt erneut versucht werden sollen.
