@@ -431,8 +431,7 @@ Wenn du veraltete gepufferte Uploads bewusst verwerfen willst, zuerst die App st
 
 ```bash
 pkill -f "python -m device.main"
-printf '[]
-' > ~/Desktop/SIA_V2/device/pending_uploads.json
+printf '[]\n' > ~/Desktop/SIA_V2/device/pending_uploads.json
 cd ~/Desktop/SIA_V2
 ./restart_ui.sh
 ```
