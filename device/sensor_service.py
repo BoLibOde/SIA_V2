@@ -127,6 +127,15 @@ class SensorService:
         with self.lock:
             return list(self.readings)
 
+    def discard_samples_before(self, cutoff: datetime) -> None:
+        """Remove all buffered samples with a timestamp earlier than *cutoff*.
+
+        Called after a successful 15-minute aggregate upload so that the
+        discarded samples cannot appear in a later upload window.
+        """
+        with self.lock:
+            self.readings = [r for r in self.readings if r.timestamp >= cutoff]
+
     def _append_reading(self, reading: SensorReading) -> None:
         with self.lock:
             self.latest_reading = reading

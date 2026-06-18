@@ -73,6 +73,9 @@ class _FakeSensorService:
     def get_hour_samples(self) -> list[SensorReading]:
         return []
 
+    def discard_samples_before(self, cutoff) -> None:
+        pass
+
 
 class _FakeGpioHandler:
     def __init__(self, queue: list[str]) -> None:
@@ -162,10 +165,15 @@ class _FakeAggregationService:
     def __init__(self, payload: object | None = "payload") -> None:
         self.payload = payload
         self.hourly_calls: list[datetime] = []
+        self.min15_calls: list[datetime] = []
         self.window_called = False
 
     def build_hourly_payload(self, *, device_id, mood_counts, sensor_samples, now):
         self.hourly_calls.append(now)
+        return self.payload
+
+    def build_15min_payload(self, *, device_id, sensor_samples, now):
+        self.min15_calls.append(now)
         return self.payload
 
     def build_window_payload(self, *args, **kwargs):
@@ -214,7 +222,7 @@ def _build_app(
     monkeypatch.setattr(device_main, "UploadService", lambda **kwargs: upload_service)
     monkeypatch.setattr(device_main, "DeviceUI", lambda **kwargs: ui)
     monkeypatch.setattr(device_main, "time", types.SimpleNamespace(sleep=lambda seconds: None))
-    monkeypatch.setattr(device_main.DeviceApp, "_try_hourly_upload", lambda self, now: None)
+    monkeypatch.setattr(device_main.DeviceApp, "_try_periodic_sensor_upload", lambda self, now: None)
 
     return device_main.DeviceApp(), gpio_handler, upload_service, ui
 
@@ -272,7 +280,7 @@ def test_run_surfaces_retry_buffer_activity(monkeypatch) -> None:
     assert ui.drawn_statuses[-1].endswith("Retry: 1 gesendet, 2 offen")
 
 
-def test_manual_upload_uses_latest_completed_hour_only(monkeypatch) -> None:
+def test_manual_upload_uses_latest_completed_15min_window(monkeypatch) -> None:
     reading = SensorReading(
         temperature_c=21.5,
         humidity_pct=41.0,
@@ -291,7 +299,8 @@ def test_manual_upload_uses_latest_completed_hour_only(monkeypatch) -> None:
 
     app._manual_upload()
 
-    assert app.aggregation_service.hourly_calls == [fixed_now]
+    assert app.aggregation_service.min15_calls == [fixed_now]
     assert app.aggregation_service.window_called is False
     assert upload_service.hourly_calls == ["payload"]
-    assert app.last_uploaded_hour == datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+    # For 12:34:56 the latest completed 15-min boundary is 12:30
+    assert app.last_uploaded_period_end == datetime(2024, 1, 1, 12, 30, 0, tzinfo=UTC)

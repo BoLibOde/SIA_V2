@@ -12,31 +12,32 @@ class UploadService:
 
     Upload tracks
     -------------
-    1. **Hourly aggregate** – ``upload_hourly_payload()`` sends one
-       60-minute sensor-average window. Called by ``_try_hourly_upload()`` in
-       main.py and also used for manual aggregate uploads triggered by the U
-       key. Failed payloads are queued in the retry file via
-       ``save_failed_upload()``.
+    1. **15-minute aggregate** – ``upload_hourly_payload()`` sends one
+       15-minute sensor-average window. Called by
+       ``_try_periodic_sensor_upload()`` in main.py and also used for manual
+       aggregate uploads triggered by the U key. Failed payloads are queued
+       in the retry file via ``save_failed_upload()``.
 
     2. **Live event** – ``upload_live_event()`` sends one measurement per
        button press so the website reflects mood changes quickly.  Uses the
        same endpoint and retry file so no events are lost if offline.
 
     3. **Retry buffer** – ``retry_pending_uploads()`` re-sends anything stored
-       in ``pending_uploads.json`` (from failed hourly or live-event uploads).
-       Both tracks share the same file; the server endpoint accepts both
-       payload types and stores them separately.
+       in ``pending_uploads.json`` (from failed aggregate or live-event
+       uploads).  Both tracks share the same file; the server endpoint accepts
+       both payload types and stores them separately.
 
     Duplicate-avoidance strategy
     ----------------------------
-    * Hourly uploads are gated by ``last_uploaded_hour`` in main.py.
+    * Periodic aggregate uploads are gated by ``last_uploaded_period_end`` in
+      main.py; the checkpoint advances only after a confirmed success.
     * Manual aggregate uploads advance the same checkpoint, so the same window
       is never uploaded twice.
     * Live-event uploads are independent point-in-time measurements and do not
       affect the aggregate checkpoint.
     * A 409 response from the server is treated as success so stale retries do
       not loop endlessly.
-    * ``save_failed_upload`` skips appending if an identical hourly aggregate
+    * ``save_failed_upload`` skips appending if an identical aggregate
       (same device_id, period_start, period_end) is already queued, preventing
       repeated failed attempts within the same upload window from growing the
       retry file.
@@ -71,7 +72,7 @@ class UploadService:
             return False
 
     def upload_hourly_payload(self, payload: HourlyUploadPayload) -> tuple[bool, str]:
-        """Upload one hourly payload. Returns (success, status_message)."""
+        """Upload one aggregate payload. Returns (success, status_message)."""
         url = f"{self.server_base_url}{self.upload_endpoint}"
         body = self._payload_to_dict(payload)
         try:
