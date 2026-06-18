@@ -62,6 +62,21 @@ Set `device_ingest_token` in `server/WEBSITE/db.local.php` (see `db.local.exampl
 
 If configured and missing/invalid, endpoint returns `401`.
 
+### Read-only today counts endpoint
+
+The Pi can also read authoritative same-day mood counts from:
+
+- `server/WEBSITE/device_today_counts.php`
+- deployed path example: `http://<host>/stimmungsbarometer/device_today_counts.php?device_id=pi-room-01`
+
+Behavior:
+
+- `GET` only; no database writes or retry side effects
+- reads only from `measurements`
+- returns today's `good` / `neutral` / `bad` counts for the resolved location
+- accepts `location_id` directly or resolves the current location via `device_location_history`
+- uses the same optional `X-Device-Token` model as `device_ingest.php`
+
 ### Supported POST JSON formats
 
 1) Direct measurement format:
@@ -198,6 +213,7 @@ Device defaults in `device/config.py` now point to the PHP ingest path:
 - `SIA_SERVER_URL` default: `http://100.74.7.35`
 - `SIA_UPLOAD_ENDPOINT` default: `/stimmungsbarometer/device_ingest.php`
 - `SIA_HEALTH_ENDPOINT` default: `/stimmungsbarometer/device_ingest.php`
+- `SIA_TODAY_COUNTS_ENDPOINT` default: `/stimmungsbarometer/device_today_counts.php`
 - `SIA_DEVICE_TOKEN` optional (sent as `X-Device-Token`)
 
 Example override:
@@ -206,9 +222,15 @@ Example override:
 export SIA_SERVER_URL="http://YOUR_HOST"
 export SIA_UPLOAD_ENDPOINT="/stimmungsbarometer/device_ingest.php"
 export SIA_HEALTH_ENDPOINT="/stimmungsbarometer/device_ingest.php"
+export SIA_TODAY_COUNTS_ENDPOINT="/stimmungsbarometer/device_today_counts.php"
 export SIA_DEVICE_TOKEN="CHANGE_ME_DEVICE_TOKEN"
 python -m device.main
 ```
+
+The Pi UI uses the server counts as the base value and applies in-memory optimistic
+pending deltas for local button presses. A value such as `12*` means the UI is
+showing a locally pending increment that has not yet been reconciled with the
+authoritative server count.
 
 ---
 

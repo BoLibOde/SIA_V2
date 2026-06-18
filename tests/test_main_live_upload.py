@@ -80,7 +80,6 @@ class _FakeSensorService:
 class _FakeGpioHandler:
     def __init__(self, queue: list[str]) -> None:
         self.queue = list(queue)
-        self.daily_counts = MoodCounts()
         self.hourly_counts = MoodCounts()
 
     def start(self) -> None:
@@ -96,10 +95,10 @@ class _FakeGpioHandler:
         return self.hourly_counts
 
     def get_daily_display_counts(self) -> MoodCounts:
-        return self.daily_counts
+        return MoodCounts()
 
     def reset_daily_display_counts(self) -> None:
-        self.daily_counts = MoodCounts()
+        pass
 
     def pop_live_events(self) -> list[str]:
         events, self.queue = self.queue, []
@@ -118,12 +117,15 @@ class _FakeUploadService:
         live_result: tuple[bool, str],
         retry_result: tuple[int, int],
         hourly_result: tuple[bool, str] = (True, "ok"),
+        today_counts_results: list[tuple[bool, MoodCounts | None, str, str]] | None = None,
     ) -> None:
         self.live_result = live_result
         self.retry_result = retry_result
         self.hourly_result = hourly_result
+        self.today_counts_results = list(today_counts_results or [(False, None, "", "today-offline")])
         self.live_calls: list[tuple[str, SensorReading, datetime]] = []
         self.hourly_calls: list[object] = []
+        self.today_count_calls: list[str] = []
 
     def check_server_health(self) -> bool:
         return True
@@ -131,6 +133,12 @@ class _FakeUploadService:
     def upload_live_event(self, mood: str, reading: SensorReading, timestamp: datetime) -> tuple[bool, str]:
         self.live_calls.append((mood, reading, timestamp))
         return self.live_result
+
+    def fetch_today_counts(self, device_id: str, location_id: int | None = None) -> tuple[bool, MoodCounts | None, str, str]:
+        self.today_count_calls.append(device_id)
+        if len(self.today_counts_results) > 1:
+            return self.today_counts_results.pop(0)
+        return self.today_counts_results[0]
 
     def retry_pending_uploads(self) -> tuple[int, int]:
         return self.retry_result
@@ -149,12 +157,16 @@ class _FakeUI:
         self.action_reset_daily = False
         self._handle_calls = 0
         self.drawn_statuses: list[str] = []
+        self.drawn_counts: list[MoodCounts] = []
+        self.drawn_pending_counts: list[MoodCounts] = []
 
     def handle_events(self) -> bool:
         self._handle_calls += 1
         return self._handle_calls == 1
 
-    def draw(self, latest, daily_counts, server_connected, last_upload_status) -> None:
+    def draw(self, latest, daily_counts, pending_counts, server_connected, last_upload_status) -> None:
+        self.drawn_counts.append(daily_counts)
+        self.drawn_pending_counts.append(pending_counts)
         self.drawn_statuses.append(last_upload_status)
 
     def close(self) -> None:
@@ -190,6 +202,7 @@ def _build_app(
     retry_result=(0, 0),
     hourly_result=(True, "ok"),
     aggregation_payload: object | None = "payload",
+    today_counts_results: list[tuple[bool, MoodCounts | None, str, str]] | None = None,
 ):
     config = SimpleNamespace(
         sensor_interval_seconds=5,
@@ -200,6 +213,7 @@ def _build_app(
         server_base_url="http://example.local",
         upload_endpoint="/device_ingest.php",
         health_endpoint="/device_ingest.php",
+        today_counts_endpoint="/device_today_counts.php",
         device_token="secret-token",
         retry_file_path="device/pending_uploads.json",
         upload_timeout_seconds=10,
@@ -211,7 +225,7 @@ def _build_app(
     )
     sensor_service = _FakeSensorService(latest_reading)
     gpio_handler = _FakeGpioHandler(queue)
-    upload_service = _FakeUploadService(live_result, retry_result, hourly_result)
+    upload_service = _FakeUploadService(live_result, retry_result, hourly_result, today_counts_results)
     aggregation_service = _FakeAggregationService(aggregation_payload)
     ui = _FakeUI()
 
@@ -259,6 +273,75 @@ def test_run_uploads_each_live_event_with_aware_timestamps(monkeypatch) -> None:
     assert [call[0] for call in upload_service.live_calls] == ["bad", "neutral"]
     assert all(call[2].tzinfo is not None for call in upload_service.live_calls)
     assert "Live: neutral live-ok" in app._last_upload_status
+
+
+def test_run_shows_optimistic_pending_counts_when_refresh_fails(monkeypatch) -> None:
+    reading = SensorReading(
+        temperature_c=21.5,
+        humidity_pct=41.0,
+        co2_ppm=615,
+        timestamp=datetime(2024, 1, 1, 9, 30, 0, tzinfo=UTC),
+    )
+    app, _, _, ui = _build_app(
+        monkeypatch,
+        latest_reading=reading,
+        queue=["good"],
+        live_result=(False, "live-timeout"),
+        today_counts_results=[(True, MoodCounts(good=5, neutral=1, bad=0), "2024-01-01", "today-ok")],
+    )
+
+    app.run()
+
+    assert ui.drawn_counts[-1] == MoodCounts(good=6, neutral=1, bad=0)
+    assert ui.drawn_pending_counts[-1] == MoodCounts(good=1, neutral=0, bad=0)
+
+
+def test_run_reconciles_pending_counts_after_successful_refresh(monkeypatch) -> None:
+    reading = SensorReading(
+        temperature_c=21.5,
+        humidity_pct=41.0,
+        co2_ppm=615,
+        timestamp=datetime(2024, 1, 1, 9, 30, 0, tzinfo=UTC),
+    )
+    app, _, upload_service, ui = _build_app(
+        monkeypatch,
+        latest_reading=reading,
+        queue=["good"],
+        today_counts_results=[
+            (True, MoodCounts(good=5, neutral=1, bad=0), "2024-01-01", "today-ok"),
+            (True, MoodCounts(good=6, neutral=1, bad=0), "2024-01-01", "today-ok"),
+        ],
+    )
+
+    app.run()
+
+    assert upload_service.today_count_calls == ["pi-room-01", "pi-room-01"]
+    assert ui.drawn_counts[-1] == MoodCounts(good=6, neutral=1, bad=0)
+    assert ui.drawn_pending_counts[-1] == MoodCounts()
+
+
+def test_run_reconciles_only_uploaded_pending_counts_without_startup_base(monkeypatch) -> None:
+    reading = SensorReading(
+        temperature_c=21.5,
+        humidity_pct=41.0,
+        co2_ppm=615,
+        timestamp=datetime(2024, 1, 1, 9, 30, 0, tzinfo=UTC),
+    )
+    app, _, _, ui = _build_app(
+        monkeypatch,
+        latest_reading=reading,
+        queue=["good", "good"],
+        live_result=(True, "live-ok"),
+        today_counts_results=[
+            (False, None, "", "today-offline"),
+            (True, MoodCounts(good=6, neutral=0, bad=0), "2024-01-01", "today-ok"),
+        ],
+    )
+
+    app.run()
+
+    assert ui.drawn_counts[-1] == MoodCounts(good=6, neutral=0, bad=0)
+    assert ui.drawn_pending_counts[-1] == MoodCounts()
 
 
 def test_run_surfaces_retry_buffer_activity(monkeypatch) -> None:

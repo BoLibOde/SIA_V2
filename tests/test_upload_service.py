@@ -75,6 +75,46 @@ def test_check_server_health_uses_get_with_headers() -> None:
     assert get_mock.call_args.kwargs["headers"]["X-Device-Token"] == "secret-token"
 
 
+def test_fetch_today_counts_sends_device_id_and_parses_counts(tmp_path) -> None:
+    service = _make_service(tmp_path)
+    response = Mock(
+        status_code=200,
+        json=Mock(
+            return_value={
+                "status": "ok",
+                "date": "2026-06-18",
+                "counts": {"good": 12, "neutral": 4, "bad": 3},
+            }
+        ),
+    )
+
+    with patch("device.upload_service.requests.get", return_value=response) as get_mock:
+        ok, counts, counts_date, status = service.fetch_today_counts("pi-room-01")
+
+    assert ok is True
+    assert counts is not None
+    assert counts.good == 12
+    assert counts.neutral == 4
+    assert counts.bad == 3
+    assert counts_date == "2026-06-18"
+    assert status == "today-ok"
+    assert get_mock.call_args.kwargs["params"]["device_id"] == "pi-room-01"
+    assert get_mock.call_args.kwargs["headers"]["X-Device-Token"] == "secret-token"
+
+
+def test_fetch_today_counts_returns_error_on_invalid_payload(tmp_path) -> None:
+    service = _make_service(tmp_path)
+    response = Mock(status_code=200, json=Mock(return_value={"status": "ok"}))
+
+    with patch("device.upload_service.requests.get", return_value=response):
+        ok, counts, counts_date, status = service.fetch_today_counts("pi-room-01")
+
+    assert ok is False
+    assert counts is None
+    assert counts_date == ""
+    assert status == "today-invalid-payload"
+
+
 def test_upload_live_event_sends_direct_measurement_payload(tmp_path) -> None:
     service = _make_service(tmp_path)
     reading = _build_reading()

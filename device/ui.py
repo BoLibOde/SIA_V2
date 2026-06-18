@@ -58,7 +58,7 @@ class DeviceUI:
         """Process pygame events. Returns False if the app should quit.
 
         Sets action_upload=True when U is pressed (manual upload flush).
-        Sets action_reset_daily=True when R is pressed (reset daily display counts).
+        Sets action_reset_daily=True when R is pressed (refresh today's server counts).
         Both flags are cleared at the start of each call; they are True for one frame only.
         """
         self.action_upload = False
@@ -79,6 +79,7 @@ class DeviceUI:
         self,
         reading: SensorReading | None,
         counts: MoodCounts,
+        pending_counts: MoodCounts | None = None,
         server_connected: bool = False,
         last_upload_status: str = "—",
     ) -> None:
@@ -87,7 +88,7 @@ class DeviceUI:
         self.screen.fill(self.bg_color)
         self._draw_title()
         self._draw_sensor_card(reading)
-        self._draw_counts_card(counts)
+        self._draw_counts_card(counts, pending_counts)
         self._draw_smiley_card(status)
         self._draw_status_bar(server_connected, last_upload_status)
         pygame.display.flip()
@@ -126,16 +127,17 @@ class DeviceUI:
         self.screen.blit(hum, (60, 220))
         self.screen.blit(co2, (60, 270))
 
-    def _draw_counts_card(self, counts: MoodCounts) -> None:
+    def _draw_counts_card(self, counts: MoodCounts, pending_counts: MoodCounts | None = None) -> None:
         rect = pygame.Rect(40, 370, 430, 180)
         self._draw_card(rect)
 
         title = self.label_font.render("Heutige Stimmungs-Zähler", True, self.text_color)
         self.screen.blit(title, (60, 395))
 
-        good = self.value_font.render(f"Gut: {counts.good}", True, self.ok_color)
-        neutral = self.value_font.render(f"Neutral: {counts.neutral}", True, self.warn_color)
-        bad = self.value_font.render(f"Schlecht: {counts.bad}", True, self.err_color)
+        pending_counts = pending_counts or MoodCounts()
+        good = self.value_font.render(f"Gut: {self._format_count(counts.good, pending_counts.good)}", True, self.ok_color)
+        neutral = self.value_font.render(f"Neutral: {self._format_count(counts.neutral, pending_counts.neutral)}", True, self.warn_color)
+        bad = self.value_font.render(f"Schlecht: {self._format_count(counts.bad, pending_counts.bad)}", True, self.err_color)
 
         self.screen.blit(good, (60, 445))
         self.screen.blit(neutral, (60, 490))
@@ -168,7 +170,7 @@ class DeviceUI:
             (f"Gerät: {self.device_id}", self.subtle_color),
             (conn_text, conn_color),
             (f"Letzter Upload: {last_upload_status}", self.subtle_color),
-            ("[U] Upload  [R] Reset  [ESC] Beenden", self.subtle_color),
+            ("[U] Upload  [R] Aktualisieren  [ESC] Beenden", self.subtle_color),
         ]
 
         x = 16
@@ -181,3 +183,6 @@ class DeviceUI:
         pygame.draw.rect(self.screen, self.card_color, rect, border_radius=18)
         pygame.draw.rect(self.screen, self.border_color, rect, width=2, border_radius=18)
 
+    @staticmethod
+    def _format_count(value: int, pending_delta: int) -> str:
+        return f"{value}*" if pending_delta > 0 else str(value)
