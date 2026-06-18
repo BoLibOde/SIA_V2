@@ -2,17 +2,62 @@
 
 ## Produktions-Stack (aktiv)
 
-```
-Raspberry Pi (device/)          Server (server/WEBSITE/)     Browser
-┌──────────────────┐            ┌──────────────────────┐    ┌──────────────┐
-│  GPIO-Tasten     │            │  PHP-App (nginx +    │    │  Dashboard   │
-│  SCD41-Sensor    │──HTTP──▶  │  php-fpm)            │◀──│  Admin       │
-│  Pygame-UI       │            │  MariaDB             │    │  Login       │
-└──────────────────┘            └──────────────────────┘    └──────────────┘
-        │
-   Tailscale-VPN
-        │
-   ─────▶ Server (100.74.7.35)
+```mermaid
+flowchart LR
+    subgraph Device[Raspberry Pi / device/]
+        GPIO[GPIO-Tasten]
+        SENSOR[SCD41-Sensor]
+        UI[Pygame-UI]
+        MAIN[device.main]
+        AGG[aggregation_service.py]
+        UPLOAD[upload_service.py]
+    end
+
+    subgraph Server[Server / server/WEBSITE/]
+        INGEST[device_ingest.php]
+        TODAY[device_today_counts.php]
+        DASH[dashboard_data_service.php]
+        DASHUI[dashboard.php]
+        ADMIN[admin*.php]
+    end
+
+    subgraph DB[(MariaDB: stimmungsbarometer)]
+        MEAS[measurements]
+        AGGS[sensor_hourly_aggregates]
+        LOC[device_location_history]
+        OTHER[users / locations / weitere Tabellen]
+    end
+
+    subgraph Browser[Browser]
+        BROWSER[Dashboard / Admin / Login]
+    end
+
+    GPIO --> MAIN
+    SENSOR --> MAIN
+    MAIN --> UI
+    MAIN --> AGG
+    MAIN --> UPLOAD
+
+    UPLOAD -->|POST Live-Event| INGEST
+    UPLOAD -->|POST 15-Minuten-Aggregat| INGEST
+    UPLOAD -->|GET Tageszähler| TODAY
+
+    INGEST --> MEAS
+    INGEST --> AGGS
+    INGEST --> LOC
+
+    TODAY --> MEAS
+    TODAY --> LOC
+
+    BROWSER --> DASHUI
+    BROWSER --> ADMIN
+    DASHUI --> DASH
+    DASH --> MEAS
+    DASH --> AGGS
+    DASH --> LOC
+
+    MAIN -->|optimistische lokale Zähler| UI
+    UPLOAD -->|Retry/Puffer| MAIN
 ```
 
 ## Datenfluss (Produktion)
@@ -39,6 +84,41 @@ Raspberry Pi (device/)          Server (server/WEBSITE/)     Browser
 > **Keine Doppelzählung:** Live-Uploads sind die einzige Quelle für Stimmungsmessungen. Sensor-Aggregat-
 > Uploads schreiben nur in `sensor_hourly_aggregates` und beeinflussen niemals die Stimmungszähler.
 
+## Sequenzdiagramm: Live-Event bei Tastendruck
+
+```mermaid
+sequenceDiagram
+    participant User as Nutzer
+    participant GPIO as GPIO-Taste
+    participant Device as Raspberry Pi
+    participant PHP as device_ingest.php
+    participant DB as MariaDB
+
+    User->>GPIO: drückt Taste
+    GPIO->>Device: Live-Event
+    Device->>PHP: POST mood event
+    PHP->>DB: INSERT into measurements
+    DB-->>PHP: OK
+    PHP-->>Device: 201 stored
+```
+
+## Sequenzdiagramm: 15-Minuten-Sensoraggregat
+
+```mermaid
+sequenceDiagram
+    participant Sensor as SCD41
+    participant Device as Raspberry Pi
+    participant PHP as device_ingest.php
+    participant DB as MariaDB
+
+    Sensor->>Device: periodische Messwerte
+    Device->>Device: Aggregation 15-Minuten-Fenster
+    Device->>PHP: POST sensor_hourly aggregate
+    PHP->>DB: INSERT into sensor_hourly_aggregates
+    DB-->>PHP: OK
+    PHP-->>Device: 201 stored
+```
+
 ## Architekturentscheidung: SQL statt JSON
 
 - MariaDB / SQL ist der maßgebliche Datenspeicher für SIA V2.
@@ -49,7 +129,7 @@ Raspberry Pi (device/)          Server (server/WEBSITE/)     Browser
 
 ## Verzeichnisstruktur
 
-```
+```text
 SIA_V2/
 ├── device/                   # Läuft auf dem Raspberry Pi
 │   ├── config.py             # Gesamte Konfiguration – per Env-Variablen überschreibbar
