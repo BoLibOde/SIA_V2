@@ -159,6 +159,32 @@ cp .env.device.example .env.device
 ./start_ui.sh
 ```
 
+### Current recommended runtime model
+
+The Raspberry Pi UI should run as a **desktop application** started from desktop autostart.
+Do **not** run a second `device.main` instance via `systemd` at the same time.
+
+- Keep exactly **one** running `python -m device.main` process.
+- Desktop autostart is the preferred way when the UI must be visible on the Pi display.
+- A parallel `systemd` service for `device.main` can cause duplicate uploads and inflated dashboard counts.
+
+### Clean restart on the Pi
+
+```bash
+pkill -f "python -m device.main"
+sleep 2
+cd ~/Desktop/SIA_V2
+./start_ui.sh &
+```
+
+### If stale pending uploads must be discarded intentionally
+
+```bash
+printf '[]\n' > ~/Desktop/SIA_V2/device/pending_uploads.json
+```
+
+Only do this if you explicitly want to drop old buffered uploads instead of retrying them.
+
 ---
 
 ## Raspberry Pi upload configuration
@@ -306,15 +332,7 @@ curl -i -X POST "http://127.0.0.1/stimmungsbarometer/device_ingest.php" \
   # must show exactly one line
   ```
 
-  If two lines appear, kill all instances and restart cleanly:
-
-  ```bash
-  pkill -f "python -m device.main"
-  sleep 2
-  cd ~/Desktop/SIA_V2
-  ./start_ui.sh
-  pgrep -af "python -m device.main"   # expect exactly 1
-  ```
+- [ ] The Pi UI is started from desktop autostart, not from a second parallel `systemd` device.main service.
 
 - [ ] Upload endpoint reachable from Pi (uses `.env.device` settings):
 
@@ -343,7 +361,7 @@ For full Pi setup instructions see [`PI_SETUP.md`](PI_SETUP.md).
 
 ## Troubleshooting (Pi operations)
 
-### Check for duplicate processes (most common cause of +2 per button press)
+### Check for duplicate processes (most common cause of duplicate uploads / inflated counts)
 
 ```bash
 pgrep -af "python -m device.main"
@@ -375,6 +393,13 @@ cat ~/Desktop/SIA_V2/device/pending_uploads.json
 
 A large or growing file means uploads are failing.  
 Verify `.env.device` is correct and the server is reachable.
+If you intentionally want to discard stale buffered uploads, stop the app first and then reset the file:
+
+```bash
+pkill -f "python -m device.main"
+printf '[]\n' > ~/Desktop/SIA_V2/device/pending_uploads.json
+./start_ui.sh &
+```
 
 ### Check `.env.device` is complete
 
