@@ -1,24 +1,28 @@
-# SIA V2 – Deployment Guide
+# SIA V2 – Deployment-Anleitung
 
-## Overview
+## Überblick
 
-| Device         | Tailscale IP    | Role                                         |
-|----------------|-----------------|----------------------------------------------|
-| Ubuntu server  | `100.74.7.35`   | PHP app (nginx + php-fpm) + MariaDB          |
-| Raspberry Pi   | `100.66.41.59`  | Device client (Pygame UI + upload)           |
+| Gerät | Tailscale-IP | Rolle |
+|-------|--------------|-------|
+| Ubuntu-Server | `100.74.7.35` | PHP-App (nginx + php-fpm) + MariaDB |
+| Raspberry Pi | `100.66.41.59` | Device-Client (Pygame-UI + Upload) |
 
 ---
 
-## 1. Ubuntu server setup (PHP + MariaDB)
+## 1. Ubuntu-Server-Setup (PHP + MariaDB)
 
-### Prerequisites
+Für eine **vollständige** Ubuntu-Server-Basisinstallation inklusive benötigter Pakete,
+Apache-Hinweis, optionalem Python-Setup, Firewall und Verifikation siehe
+[`ubuntu-server-setup.md`](ubuntu-server-setup.md).
+
+### Voraussetzungen
 
 ```bash
 sudo apt update
 sudo apt install -y git nginx php-fpm php-mysql mariadb-server tailscale
 ```
 
-### Clone the repository
+### Repository klonen
 
 ```bash
 cd /var/www/html
@@ -26,14 +30,14 @@ sudo git clone https://github.com/BoLibOde/SIA_V2.git stimmungsbarometer
 sudo chown -R www-data:www-data stimmungsbarometer
 ```
 
-### MariaDB setup
+### MariaDB-Setup
 
 ```bash
 sudo mysql_secure_installation
 sudo mysql -u root -p
 ```
 
-In the MariaDB prompt:
+Im MariaDB-Prompt:
 
 ```sql
 CREATE DATABASE stimmungsbarometer CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
@@ -43,27 +47,27 @@ FLUSH PRIVILEGES;
 \q
 ```
 
-Import the schema:
+Schema importieren:
 
 ```bash
 sudo mysql -u root -p stimmungsbarometer < /var/www/html/stimmungsbarometer/server/stimmungsbarometer.sql
 ```
 
-### PHP local config (credentials + device token)
+### Lokale PHP-Konfiguration (Zugangsdaten + Device-Token)
 
 ```bash
 cd /var/www/html/stimmungsbarometer/server/WEBSITE
 cp db.local.example.php db.local.php
-# edit db.local.php: set host, dbname, user, pass, timezone, device_ingest_token
+# db.local.php bearbeiten: host, dbname, user, pass, timezone, device_ingest_token setzen
 sudo chown www-data:www-data db.local.php
 sudo chmod 640 db.local.php
 ```
 
-`db.local.php` is in `.gitignore` and must never be committed.
+`db.local.php` steht in `.gitignore` und darf niemals committet werden.
 
-### nginx configuration
+### nginx-Konfiguration
 
-Point nginx to `server/WEBSITE/` as the document root. Example minimal config:
+nginx auf `server/WEBSITE/` als Document Root zeigen lassen. Minimales Beispiel:
 
 ```nginx
 server {
@@ -84,44 +88,44 @@ server {
 }
 ```
 
-Then reload:
+Danach neu laden:
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-### Verify
+### Verifizieren
 
 ```bash
 curl -i http://127.0.0.1/stimmungsbarometer/device_ingest.php
-# Expected: {"status":"ok","service":"php-device-ingest"}
+# Erwartet: {"status":"ok","service":"php-device-ingest"}
 ```
 
 ---
 
-## 2. Raspberry Pi setup
+## 2. Raspberry-Pi-Setup
 
-### Initial setup
+### Initiales Setup
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/BoLibOde/SIA_V2/main/setup.sh)
 ```
 
-This clones the repo to `~/Desktop/SIA_V2`, creates `.venv`, and installs Python dependencies.
+Das klont das Repository nach `~/Desktop/SIA_V2`, erstellt `.venv` und installiert Python-Abhängigkeiten.
 
-### Configure device environment
+### Device-Umgebung konfigurieren
 
 ```bash
 cd ~/Desktop/SIA_V2
 cp .env.device.example .env.device
-# edit .env.device: set SIA_SERVER_URL, SIA_DEVICE_TOKEN (must match server db.local.php)
+# .env.device bearbeiten: SIA_SERVER_URL, SIA_DEVICE_TOKEN setzen (muss zu server db.local.php passen)
 ```
 
-### Desktop autostart
+### Desktop-Autostart
 
-The Pi UI runs as a **desktop application** started via autostart (not systemd).  
-This is required for pygame to access the display session.
+Die Pi-UI läuft als **Desktop-Anwendung**, die per Autostart gestartet wird (nicht per systemd).  
+Das ist erforderlich, damit pygame auf die Display-Sitzung zugreifen kann.
 
-Create `~/.config/autostart/sia.desktop`:
+`~/.config/autostart/sia.desktop` anlegen:
 
 ```ini
 [Desktop Entry]
@@ -131,39 +135,39 @@ Exec=/home/ebm/Desktop/SIA_V2/start_ui.sh
 Path=/home/ebm/Desktop/SIA_V2
 ```
 
-`start_ui.sh` activates `.venv`, loads `.env.device`, and starts `python -m device.main`.
-Logs are written to `ui-autostart.log` in the repo root.
+`start_ui.sh` aktiviert `.venv`, lädt `.env.device` und startet `python -m device.main`.
+Logs werden im Repository-Root in `ui-autostart.log` geschrieben.
 
-### Verify
+### Verifizieren
 
 ```bash
-# Check only one process is running
+# Prüfen, dass nur ein Prozess läuft
 pgrep -af "python -m device.main"
 
-# Live logs
+# Live-Logs
 tail -f ~/Desktop/SIA_V2/ui-autostart.log
 
-# Manual upload test
+# Manueller Upload-Test
 cd ~/Desktop/SIA_V2
 ./manual_upload_test.sh
 ```
 
-> **Important:** There must be exactly **one** `python -m device.main` process.  
-> Multiple instances cause duplicate uploads (dashboard shows +2 per button press).  
-> If you see two processes: `pkill -f "python -m device.main"` then restart with `./start_ui.sh`.
+> **Wichtig:** Es darf genau **ein** `python -m device.main`-Prozess laufen.  
+> Mehrere Instanzen verursachen doppelte Uploads (Dashboard zeigt +2 pro Tastendruck).  
+> Wenn du zwei Prozesse siehst: `pkill -f "python -m device.main"`, dann mit `./start_ui.sh` neu starten.
 
 ---
 
-## 3. Update flow on the Pi
+## 3. Update-Ablauf auf dem Pi
 
 ```bash
 cd ~/Desktop/SIA_V2
 ./update_pi.sh
 ```
 
-`update_pi.sh` fetches `origin/main`, fast-forwards, refreshes Python deps, and restarts the UI.
+`update_pi.sh` holt `origin/main`, führt einen Fast-Forward aus, aktualisiert Python-Abhängigkeiten und startet die UI neu.
 
-Manual restart only (no update):
+Nur manueller Neustart (kein Update):
 
 ```bash
 ./restart_ui.sh
@@ -172,7 +176,7 @@ pgrep -af "python -m device.main"
 
 ---
 
-## 4. Viewing logs
+## 4. Logs ansehen
 
 ### Server (nginx + PHP)
 
@@ -191,22 +195,22 @@ tail -f ~/Desktop/SIA_V2/ui-autostart.log
 
 ## 5. Troubleshooting
 
-| Symptom | Check |
-|---------|-------|
-| Pi can't reach server | `tailscale ping 100.74.7.35` – both devices must be in the same tailnet |
-| 404 on ingest | Verify `SIA_UPLOAD_ENDPOINT=/stimmungsbarometer/device_ingest.php` in `.env.device` |
-| 401 Unauthorized | `SIA_DEVICE_TOKEN` in `.env.device` must match `device_ingest_token` in `db.local.php` |
-| 422 Unprocessable | No device location set for this timestamp – configure via Admin → Gerätestandort |
-| Dashboard shows +2 per press | Two device.main processes running – kill duplicates and restart |
-| Log fills with "Retry: 0 gesendet, N offen" | Network issue or wrong endpoint – check `.env.device` and server reachability |
-| UI freezes on Pi startup | Pygame needs a display – verify desktop session is running |
+| Symptom | Prüfung |
+|---------|---------|
+| Pi erreicht Server nicht | `tailscale ping 100.74.7.35` – beide Geräte müssen im selben Tailnet sein |
+| 404 auf Ingest | Prüfen, ob `SIA_UPLOAD_ENDPOINT=/stimmungsbarometer/device_ingest.php` in `.env.device` gesetzt ist |
+| 401 Unauthorized | `SIA_DEVICE_TOKEN` in `.env.device` muss `device_ingest_token` in `db.local.php` entsprechen |
+| 422 Unprocessable | Kein Gerätestandort für diesen Zeitstempel gesetzt – über Admin → Gerätestandort konfigurieren |
+| Dashboard zeigt +2 pro Tastendruck | Zwei `device.main`-Prozesse laufen – Duplikate beenden und neu starten |
+| Log füllt sich mit "Retry: 0 gesendet, N offen" | Netzwerkproblem oder falscher Endpunkt – `.env.device` und Server-Erreichbarkeit prüfen |
+| UI friert beim Pi-Start ein | Pygame benötigt ein Display – prüfen, ob die Desktop-Sitzung läuft |
 
 ---
 
-## 6. FastAPI alternate path (not in production)
+## 6. FastAPI-Alternativpfad (nicht in Produktion)
 
-The repository contains a Python/FastAPI server (`server/main.py`, `server/routes/`) used
-for local development and testing.  Run it with:
+Das Repository enthält einen Python/FastAPI-Server (`server/main.py`, `server/routes/`), der
+für lokale Entwicklung und Tests verwendet wird. Starten mit:
 
 ```bash
 pip install -r requirements-server.txt
@@ -214,4 +218,4 @@ uvicorn server.main:app --host 0.0.0.0 --port 8000
 pytest
 ```
 
-This is **not** deployed on the production server.  See `docs/api.md` for endpoint details.
+Dieser Pfad ist auf dem Produktionsserver **nicht** deployt. Siehe `docs/api.md` für Endpunktdetails.

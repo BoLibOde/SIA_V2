@@ -1,28 +1,28 @@
-# Raspberry Pi UI runtime + device secret handling
+# Raspberry-Pi-UI-Runtime + Umgang mit Device-Secrets
 
-The Raspberry Pi UI should run as a **desktop application** via desktop autostart so the
-Pygame window is visible on the Pi display. For a visible UI, this desktop autostart path
-is the single supported runtime model.
+Die Raspberry-Pi-UI sollte als **Desktop-Anwendung** über den Desktop-Autostart laufen, damit das
+Pygame-Fenster auf dem Pi-Display sichtbar ist. Für eine sichtbare UI ist dieser Desktop-Autostart-Pfad
+das einzig unterstützte Runtime-Modell.
 
-Use the repository root helper scripts below.
+Verwende die Hilfsskripte im Repository-Root.
 
-## 1) Create local device env file
+## 1) Lokale Device-Env-Datei anlegen
 
 ```bash
 cd ~/Desktop/SIA_V2
 cp .env.device.example .env.device
 ```
 
-`.env.device` is **local-only** and contains secrets (`SIA_DEVICE_TOKEN`).
-Do not commit it.
+`.env.device` ist **nur lokal** und enthält Secrets (`SIA_DEVICE_TOKEN`).
+Nicht committen.
 
-Current example defaults:
+Aktuelle Beispiel-Defaults:
 
-- `SIA_SERVER_URL=http://100.74.7.35` (placeholder, environment-specific; set this to the server address your Pi can reach, e.g. Tailscale IP, LAN IP, or DNS name)
+- `SIA_SERVER_URL=http://100.74.7.35` (Platzhalter, umgebungsspezifisch; auf die Server-Adresse setzen, die dein Pi erreichen kann, z. B. Tailscale-IP, LAN-IP oder DNS-Name)
 - `SIA_UPLOAD_ENDPOINT=/device_ingest.php`
 - `SIA_HEALTH_ENDPOINT=/device_ingest.php`
 
-## 2) Manual upload test
+## 2) Manueller Upload-Test
 
 ```bash
 cd ~/Desktop/SIA_V2
@@ -30,9 +30,9 @@ chmod +x manual_upload_test.sh
 ./manual_upload_test.sh
 ```
 
-This sends one POST request to `${SIA_SERVER_URL}${SIA_UPLOAD_ENDPOINT}` with `X-Device-Token` and a current timestamp.
+Das sendet eine POST-Anfrage an `${SIA_SERVER_URL}${SIA_UPLOAD_ENDPOINT}` mit `X-Device-Token` und einem aktuellen Zeitstempel.
 
-## 3) Start the UI runtime script
+## 3) UI-Runtime-Skript starten
 
 ```bash
 cd ~/Desktop/SIA_V2
@@ -42,31 +42,31 @@ chmod +x start_ui.sh
 
 `start_ui.sh`:
 
-- activates `.venv`
-- loads `.env.device`
-- exports `SIA_SERVER_URL`, `SIA_UPLOAD_ENDPOINT`, `SIA_HEALTH_ENDPOINT`, `SIA_DEVICE_TOKEN`, `SIA_DEVICE_ID`
-- starts `python -m device.main`
-- writes app output to `ui-autostart.log`
-- includes duplicate-start protection (if a `device.main` process already exists, startup is skipped and logged)
+- aktiviert `.venv`
+- lädt `.env.device`
+- exportiert `SIA_SERVER_URL`, `SIA_UPLOAD_ENDPOINT`, `SIA_HEALTH_ENDPOINT`, `SIA_DEVICE_TOKEN`, `SIA_DEVICE_ID`
+- startet `python -m device.main`
+- schreibt die App-Ausgabe in `ui-autostart.log`
+- enthält Schutz vor Doppelstarts (wenn bereits ein `device.main`-Prozess existiert, wird der Start übersprungen und protokolliert)
 
-## 4) Desktop autostart
+## 4) Desktop-Autostart
 
-Point the desktop autostart entry to this script:
+Den Desktop-Autostart-Eintrag auf dieses Skript zeigen lassen:
 
 ```ini
 Exec=/home/<user>/Desktop/SIA_V2/start_ui.sh
 Path=/home/<user>/Desktop/SIA_V2
 ```
 
-This keeps the UI tied to the logged-in desktop session (Wayland/X session), which is required for Pygame display startup.
+So bleibt die UI an die eingeloggte Desktop-Sitzung (Wayland/X-Session) gekoppelt, was für den Start der Pygame-Anzeige erforderlich ist.
 
-## 5) Recommended update flow on the Pi
+## 5) Empfohlener Update-Ablauf auf dem Pi
 
-Avoid `git pull` for routine Pi updates when local branch tracking is uncertain
-or when local merge state is unclear. `git pull` can fail unexpectedly or create local merges.
-`update_pi.sh` uses a fast-forward-only update (`git merge --ff-only origin/main`) and exits with
-clear guidance if the update cannot be done safely.
-Use the helper scripts in the repository root:
+`git pull` für routinemäßige Pi-Updates vermeiden, wenn das lokale Branch-Tracking unsicher ist
+oder wenn der lokale Merge-Status unklar ist. `git pull` kann unerwartet fehlschlagen oder lokale Merges erzeugen.
+`update_pi.sh` verwendet ein Update nur per Fast-Forward (`git merge --ff-only origin/main`) und beendet sich mit
+klaren Hinweisen, wenn das Update nicht sicher durchgeführt werden kann.
+Verwende die Hilfsskripte im Repository-Root:
 
 ```bash
 cd ~/Desktop/SIA_V2
@@ -74,52 +74,52 @@ chmod +x restart_ui.sh update_pi.sh
 ./update_pi.sh
 ```
 
-`update_pi.sh` will:
+`update_pi.sh` wird:
 
-- fetch and fast-forward to `origin/main` in a predictable way
-- preserve local `.env.device`
-- refresh device Python dependencies
-- close the running UI instance and start the updated one via `restart_ui.sh`
+- `origin/main` holen und per Fast-Forward in vorhersagbarer Weise aktualisieren
+- die lokale `.env.device` beibehalten
+- die Python-Abhängigkeiten des Devices aktualisieren
+- die laufende UI-Instanz beenden und die aktualisierte Version über `restart_ui.sh` starten
 
-> **Important:** After any code change (manual `git pull`, file copy, etc.) the running
-> Python process does **not** pick up new code automatically — it must be restarted.
-> `update_pi.sh` handles this automatically. If you deploy by any other means, restart
-> the UI manually afterwards.
+> **Wichtig:** Nach jeder Codeänderung (manuelles `git pull`, Dateikopie usw.) übernimmt der laufende
+> Python-Prozess neuen Code **nicht automatisch** — er muss neu gestartet werden.
+> `update_pi.sh` übernimmt das automatisch. Wenn du auf anderem Weg deployst, starte
+> die UI anschließend manuell neu.
 
-## 6) Single-instance rule
+## 6) Single-Instance-Regel
 
-Keep exactly **one** `python -m device.main` process running.
+Es darf genau **ein** Prozess `python -m device.main` laufen.
 
-Do **not** run a parallel `systemd` service for `device.main` at the same time as desktop autostart.
-That combination can cause duplicate uploads and inflated dashboard counts.
+Keinen parallelen `systemd`-Service für `device.main` zusammen mit Desktop-Autostart betreiben.
+Diese Kombination kann doppelte Uploads und aufgeblähte Dashboard-Zähler verursachen.
 
-Recommended setup for a visible Pi UI:
+Empfohlenes Setup für eine sichtbare Pi-UI:
 
 ```bash
 sudo systemctl disable --now sia-device
 ```
 
-Then let the desktop autostart entry launch the app on login.
+Danach soll der Desktop-Autostart-Eintrag die App beim Login starten.
 
-Check the running process count with:
+Die Anzahl laufender Prozesse prüfen mit:
 
 ```bash
 pgrep -af "python -m device.main"
 pgrep -fc "python -m device.main"
 ```
 
-Expected result:
+Erwartetes Ergebnis:
 
-- exactly one process line
-- count = `1`
+- genau eine Prozesszeile
+- Anzahl = `1`
 
-Upload behavior expected with this runtime:
+Erwartetes Upload-Verhalten bei dieser Runtime:
 
-- Live uploads are the sole source of mood events / mood counts.
-- Periodic uploads are 15-minute sensor aggregates only.
-- Periodic aggregate uploads must not change mood counts.
+- Live-Uploads sind die einzige Quelle für Stimmungsereignisse / Stimmungszähler.
+- Periodische Uploads sind ausschließlich 15-Minuten-Sensoraggregate.
+- Periodische Aggregat-Uploads dürfen die Stimmungszähler nicht verändern.
 
-## 7) Clean restart
+## 7) Sauberer Neustart
 
 ```bash
 cd ~/Desktop/SIA_V2
@@ -128,27 +128,27 @@ pgrep -af "python -m device.main"
 pgrep -fc "python -m device.main"
 ```
 
-## 8) Retry buffer / stale upload cleanup
+## 8) Retry-Puffer / Bereinigung veralteter Uploads
 
-Failed uploads are buffered locally in:
+Fehlgeschlagene Uploads werden lokal gepuffert in:
 
 ```text
 device/pending_uploads.json
 ```
 
-Check it with:
+Prüfen mit:
 
 ```bash
 cat ~/Desktop/SIA_V2/device/pending_uploads.json
 ```
 
-Normal state:
+Normalzustand:
 
 ```json
 []
 ```
 
-If the file contains old buffered events that you **intentionally want to discard** before the next start:
+Wenn die Datei alte gepufferte Ereignisse enthält, die du **bewusst verwerfen** willst, bevor die App das nächste Mal startet:
 
 ```bash
 pkill -f "python -m device.main"
@@ -157,18 +157,18 @@ cd ~/Desktop/SIA_V2
 ./restart_ui.sh
 ```
 
-Only do this if you explicitly want to drop old buffered uploads instead of retrying them.
+Das nur tun, wenn alte gepufferte Uploads ausdrücklich verworfen statt erneut versucht werden sollen.
 
-## 9) Manual restart only (no update)
+## 9) Nur manueller Neustart (kein Update)
 
-If you only need to restart the app without pulling new code:
+Wenn du die App nur neu starten musst, ohne neuen Code zu ziehen:
 
 ```bash
 cd ~/Desktop/SIA_V2
 ./restart_ui.sh
 ```
 
-After restart, verify with:
+Nach dem Neustart prüfen mit:
 
 ```bash
 pgrep -af "python -m device.main"

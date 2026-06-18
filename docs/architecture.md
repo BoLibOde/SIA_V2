@@ -1,104 +1,104 @@
-# Architecture Overview
+# Architekturüberblick
 
-## Production stack (active)
+## Produktions-Stack (aktiv)
 
 ```
 Raspberry Pi (device/)          Server (server/WEBSITE/)     Browser
 ┌──────────────────┐            ┌──────────────────────┐    ┌──────────────┐
-│  GPIO buttons    │            │  PHP app (nginx +    │    │  dashboard   │
-│  SCD41 sensor    │──HTTP──▶  │  php-fpm)            │◀──│  admin       │
-│  Pygame UI       │            │  MariaDB             │    │  login       │
+│  GPIO-Tasten     │            │  PHP-App (nginx +    │    │  Dashboard   │
+│  SCD41-Sensor    │──HTTP──▶  │  php-fpm)            │◀──│  Admin       │
+│  Pygame-UI       │            │  MariaDB             │    │  Login       │
 └──────────────────┘            └──────────────────────┘    └──────────────┘
         │
-   Tailscale VPN
+   Tailscale-VPN
         │
-   ─────▶ server (100.74.7.35)
+   ─────▶ Server (100.74.7.35)
 ```
 
-## Data flow (production)
+## Datenfluss (Produktion)
 
-1. GPIO buttons on the device increment the visible Pi mood counters optimistically in memory; SCD41 sensor is read periodically.
-   The visible Pi UI is started from desktop autostart using `start_ui.sh`; routine restart/deploy
-   uses `restart_ui.sh` / `update_pi.sh`. Run only one `python -m device.main` instance (no parallel
-   `systemd` runtime for `device.main`).
-2. Every 15 minutes the device sends a sensor aggregate payload (`sensor_avg`, `sample_count`) to
-   `device_ingest.php` covering the exact completed 15-minute window (HH:00–HH:15, HH:15–HH:30,
-   HH:30–HH:45, HH:45–HH+1:00).  Each button press also triggers an immediate live-event upload
-   via the same endpoint.
-3. `device_ingest.php` writes live events into `measurements` and sensor aggregates into
-   `sensor_hourly_aggregates` (MariaDB).  The two tracks are strictly separated: sensor aggregates
-   do **not** create mood votes.
-4. The dashboard reads mood counts from `measurements` and sensor data from
-   `sensor_hourly_aggregates` via `dashboard_data_service.php`. The Pi reads
-   today's authoritative mood counts from the read-only `device_today_counts.php`
-   endpoint and reconciles its optimistic local deltas after successful uploads.
-5. Failed uploads are buffered locally in `device/pending_uploads.json` and retried automatically.
-   Duplicate aggregate submissions (same `location_id + period_start + period_end`) are rejected
-   by the server with `409` and treated as success on the device side.
+1. GPIO-Tasten auf dem Device erhöhen die sichtbaren Pi-Stimmungszähler optimistisch im Speicher; der SCD41-Sensor wird periodisch ausgelesen.
+   Die sichtbare Pi-UI wird per Desktop-Autostart mit `start_ui.sh` gestartet; für Routine-Neustarts/Deploys dienen
+   `restart_ui.sh` / `update_pi.sh`. Es darf nur eine `python -m device.main`-Instanz laufen (keine parallele
+   `systemd`-Runtime für `device.main`).
+2. Alle 15 Minuten sendet das Device einen Sensor-Aggregat-Payload (`sensor_avg`, `sample_count`) an
+   `device_ingest.php`, der genau das abgeschlossene 15-Minuten-Fenster abdeckt (`HH:00–HH:15`, `HH:15–HH:30`,
+   `HH:30–HH:45`, `HH:45–HH+1:00`). Jeder Tastendruck löst zusätzlich einen sofortigen Live-Event-Upload
+   über denselben Endpunkt aus.
+3. `device_ingest.php` schreibt Live-Events in `measurements` und Sensoraggregate in
+   `sensor_hourly_aggregates` (MariaDB). Die beiden Pfade sind strikt getrennt: Sensoraggregate
+   erzeugen **keine** Stimmungsvotes.
+4. Das Dashboard liest Stimmungszähler aus `measurements` und Sensordaten aus
+   `sensor_hourly_aggregates` über `dashboard_data_service.php`. Der Pi liest die
+   maßgeblichen Stimmungszähler des aktuellen Tages über den Read-only-Endpunkt `device_today_counts.php`
+   und gleicht seine optimistischen lokalen Deltas nach erfolgreichen Uploads wieder ab.
+5. Fehlgeschlagene Uploads werden lokal in `device/pending_uploads.json` gepuffert und automatisch erneut versucht.
+   Doppelte Aggregat-Übermittlungen (gleiches `location_id + period_start + period_end`) werden
+   serverseitig mit `409` abgelehnt und auf dem Device als Erfolg behandelt.
 
-> **No double-counting:** Live uploads are the sole source of mood measurements.  Sensor aggregate
-> uploads write only to `sensor_hourly_aggregates` and never affect mood counts.
+> **Keine Doppelzählung:** Live-Uploads sind die einzige Quelle für Stimmungsmessungen. Sensor-Aggregat-
+> Uploads schreiben nur in `sensor_hourly_aggregates` und beeinflussen niemals die Stimmungszähler.
 
-## Architecture decision: SQL over JSON
+## Architekturentscheidung: SQL statt JSON
 
-- MariaDB / SQL is the authoritative data store for SIA V2.
-- JSON (`pending_uploads.json`) is only a local retry buffer for offline/failed uploads.
-- The Pi's today's mood display uses server base counts plus in-memory pending deltas;
-  `pending_uploads.json` is never the source of truth for displayed counts.
-- Aggregation, filtering and historical views are handled server-side by PHP/SQL.
+- MariaDB / SQL ist der maßgebliche Datenspeicher für SIA V2.
+- JSON (`pending_uploads.json`) ist nur ein lokaler Retry-Puffer für Offline-/fehlgeschlagene Uploads.
+- Die heutige Stimmungsanzeige des Pi nutzt Basiszähler vom Server plus Pending-Deltas im Speicher;
+  `pending_uploads.json` ist niemals die Source of Truth für angezeigte Zähler.
+- Aggregation, Filterung und historische Ansichten werden serverseitig in PHP/SQL umgesetzt.
 
-## Directory layout
+## Verzeichnisstruktur
 
 ```
 SIA_V2/
-├── device/                   # Runs on Raspberry Pi
-│   ├── config.py             # All config – overrideable via env vars
-│   ├── main.py               # Entry point, main loop
-│   ├── gpio_handler.py       # Button input + debounce
-│   ├── sensor_service.py     # SCD41 sensor (or simulation)
-│   ├── aggregation_service.py# Builds 15-min sensor aggregate payload
-│   ├── upload_service.py     # HTTP upload + retry buffer
-│   ├── ui.py                 # Pygame display
-│   └── models.py             # Dataclasses shared inside device/
+├── device/                   # Läuft auf dem Raspberry Pi
+│   ├── config.py             # Gesamte Konfiguration – per Env-Variablen überschreibbar
+│   ├── main.py               # Einstiegspunkt, Hauptschleife
+│   ├── gpio_handler.py       # Tastereingaben + Entprellung
+│   ├── sensor_service.py     # SCD41-Sensor (oder Simulation)
+│   ├── aggregation_service.py# Baut 15-Minuten-Sensoraggregat-Payload
+│   ├── upload_service.py     # HTTP-Upload + Retry-Puffer
+│   ├── ui.py                 # Pygame-Anzeige
+│   └── models.py             # Dataclasses, die innerhalb von device/ geteilt werden
 │
 ├── server/
-│   ├── WEBSITE/              # ★ PRODUCTION – PHP app served by nginx + php-fpm
-│   │   ├── device_ingest.php # POST endpoint for the Pi (writes measurements)
-│   │   ├── dashboard.php     # Dashboard UI
+│   ├── WEBSITE/              # ★ PRODUKTION – PHP-App ausgeliefert durch nginx + php-fpm
+│   │   ├── device_ingest.php # POST-Endpunkt für den Pi (schreibt measurements)
+│   │   ├── dashboard.php     # Dashboard-UI
 │   │   ├── dashboard_data.php / dashboard_data_service.php
-│   │   ├── admin*.php        # Admin pages (locations, users, manual measurements)
-│   │   ├── db.php            # DB config loader
-│   │   └── db.local.php      # Server-local credentials (never committed)
+│   │   ├── admin*.php        # Admin-Seiten (Standorte, Benutzer, manuelle Messungen)
+│   │   ├── db.php            # DB-Konfigurations-Loader
+│   │   └── db.local.php      # Server-lokale Zugangsdaten (nie committen)
 │   │
-│   ├── main.py               # FastAPI app (alternate/dev – see below)
-│   ├── routes/               # FastAPI routes (alternate/dev)
-│   └── stimmungsbarometer.sql# MariaDB schema + sample data
+│   ├── main.py               # FastAPI-App (alternativ/dev – siehe unten)
+│   ├── routes/               # FastAPI-Routen (alternativ/dev)
+│   └── stimmungsbarometer.sql# MariaDB-Schema + Beispieldaten
 │
 └── docs/
-    ├── architecture.md       # This file
-    ├── api.md                # Endpoint reference (PHP production + FastAPI alternate)
+    ├── architecture.md       # Diese Datei
+    ├── api.md                # Endpunkt-Referenz (PHP-Produktion + FastAPI-Alternative)
     ├── deployment_tailscale.md
     └── tailscale-setup.md
 ```
 
-## Technology choices
+## Technologiewahl
 
-| Layer   | Technology              | Role                                        |
-|---------|-------------------------|---------------------------------------------|
-| Device  | Python + Pygame         | Runs on Pi, UI without a browser            |
-| Server  | PHP + nginx + php-fpm   | **Production** web app and ingest endpoint  |
-| DB      | MariaDB (`stimmungsbarometer`) | **Production** data store             |
-| Network | Tailscale               | VPN so Pi can reach the server              |
-| Server (alt) | FastAPI + SQLAlchemy | Alternate/development path (not deployed) |
-| DB (alt)| PostgreSQL              | Used only with the FastAPI alternate path   |
+| Ebene | Technologie | Rolle |
+|-------|-------------|-------|
+| Device | Python + Pygame | Läuft auf dem Pi, UI ohne Browser |
+| Server | PHP + nginx + php-fpm | **Produktive** Web-App und Ingest-Endpunkt |
+| DB | MariaDB (`stimmungsbarometer`) | **Produktiver** Datenspeicher |
+| Netzwerk | Tailscale | VPN, damit der Pi den Server erreichen kann |
+| Server (alt) | FastAPI + SQLAlchemy | Alternativer/Entwicklungspfad (nicht deployt) |
+| DB (alt) | PostgreSQL | Wird nur mit dem alternativen FastAPI-Pfad verwendet |
 
-## Alternate / development path (non-production)
+## Alternativer / Entwicklungs-Pfad (nicht Produktion)
 
-The repository also contains a Python/FastAPI backend (`server/main.py`, `server/routes/`) and
-corresponding tests (`tests/`).  This code was the original prototype and is retained for
-development and experimentation.  It is **not** deployed in production.
+Das Repository enthält außerdem ein Python/FastAPI-Backend (`server/main.py`, `server/routes/`) und
+zugehörige Tests (`tests/`). Dieser Code war der ursprüngliche Prototyp und bleibt für
+Entwicklung und Experimente erhalten. Er ist **nicht** in Produktion deployt.
 
-To run the FastAPI server locally:
+So startest du den FastAPI-Server lokal:
 
 ```bash
 pip install -r requirements-server.txt

@@ -1,20 +1,24 @@
 # SIA_V2
 
-## Production reality (active path)
+## Produktionsrealität (aktiver Pfad)
 
-This repository contains multiple implementations.  
-**The live production stack is currently:**
+Dieses Repository enthält mehrere Implementierungen.  
+**Der aktuell produktive Stack ist:**
 
-- PHP application (`/server/WEBSITE`)
+- PHP-Anwendung (`/server/WEBSITE`)
 - nginx
 - php-fpm
 - MariaDB (`stimmungsbarometer`)
 
-The production webroot on the server is typically:
+Für eine vollständige Ubuntu-Server-Einrichtung siehe auch
+[`docs/ubuntu-server-setup.md`](docs/ubuntu-server-setup.md). Dort ist auch klar dokumentiert,
+dass produktiv **nginx + php-fpm + MariaDB** benötigt werden und **Apache nicht erforderlich** ist.
+
+Das Produktions-Webroot auf dem Server ist typischerweise:
 
 - `/var/www/html/stimmungsbarometer`
 
-The PHP app reads/writes MariaDB tables including:
+Die PHP-App liest/schreibt MariaDB-Tabellen, darunter:
 
 - `users`
 - `locations`
@@ -22,64 +26,63 @@ The PHP app reads/writes MariaDB tables including:
 - `sensor_hourly_aggregates`
 - `device_location_history`
 
-## Production deploy behavior (database safety)
+## Deploy-Verhalten in Produktion (Datenbanksicherheit)
 
-Normal GitHub Actions deploys update the website files only and **do not reset or
-rebuild** the production MariaDB database.
+Normale GitHub-Actions-Deploys aktualisieren nur die Website-Dateien und **setzen die produktive MariaDB-Datenbank nicht zurück und bauen sie nicht neu auf**.
 
-- Live data in tables such as `locations`, `users`, `measurements`,
-  `sensor_hourly_aggregates`, and `device_location_history` must remain untouched
-  during standard deploys.
-- `scripts/refresh_database.sh` is a destructive reset helper and must only be run
-  manually for explicit bootstrap/recovery scenarios.
+- Live-Daten in Tabellen wie `locations`, `users`, `measurements`,
+  `sensor_hourly_aggregates` und `device_location_history` müssen bei
+  Standard-Deploys unverändert bleiben.
+- `scripts/refresh_database.sh` ist ein destruktiver Reset-Helfer und darf nur
+  manuell für explizite Bootstrap-/Recovery-Szenarien ausgeführt werden.
 
 ---
 
-## Device ingest endpoint for Raspberry Pi (production)
+## Device-Ingest-Endpunkt für Raspberry Pi (Produktion)
 
-A dedicated machine endpoint now exists in the PHP app:
+In der PHP-App gibt es jetzt einen dedizierten Maschinenendpunkt:
 
 - `server/WEBSITE/device_ingest.php`
-- deployed path example: `http://<host>/device_ingest.php`
+- Beispiel für den deployten Pfad: `http://<host>/device_ingest.php`
 
-### Behavior
+### Verhalten
 
-- `GET` returns JSON health info (`200`).
-- `POST` expects JSON payload.
-- No browser session login is required.
-- Stores **live mood events** in `measurements`.
-- Stores **15-minute sensor averages** in `sensor_hourly_aggregates`.
-- Uses `location_id` from payload when provided.
-- Otherwise resolves `location_id` from `device_location_history` by the payload timestamp (`created_at` for live events, `period_end` for sensor aggregate uploads).
-- Returns JSON and proper HTTP status codes.
+- `GET` liefert JSON-Health-Informationen (`200`).
+- `POST` erwartet einen JSON-Payload.
+- Es ist kein Browser-Session-Login erforderlich.
+- Speichert **Live-Stimmungsereignisse** in `measurements`.
+- Speichert **15-Minuten-Sensordurchschnitte** in `sensor_hourly_aggregates`.
+- Nutzt `location_id` aus dem Payload, wenn vorhanden.
+- Andernfalls wird `location_id` anhand des Payload-Zeitstempels über `device_location_history` aufgelöst (`created_at` für Live-Events, `period_end` für Sensor-Aggregat-Uploads).
+- Gibt JSON und korrekte HTTP-Statuscodes zurück.
 
-### Optional shared secret (recommended)
+### Optionales Shared Secret (empfohlen)
 
-Set `device_ingest_token` in `server/WEBSITE/db.local.php` (see `db.local.example.php`) and send it as:
+Setze `device_ingest_token` in `server/WEBSITE/db.local.php` (siehe `db.local.example.php`) und sende es als:
 
-- HTTP header: `X-Device-Token: <token>`
-- (fallback) JSON field: `token`
+- HTTP-Header: `X-Device-Token: <token>`
+- (Fallback) JSON-Feld: `token`
 
-If configured and missing/invalid, endpoint returns `401`.
+Wenn konfiguriert und fehlend/ungültig, gibt der Endpunkt `401` zurück.
 
-### Read-only today counts endpoint
+### Read-only-Endpunkt für heutige Zählerstände
 
-The Pi can also read authoritative same-day mood counts from:
+Der Pi kann außerdem die maßgeblichen Stimmungszähler des aktuellen Tages lesen über:
 
 - `server/WEBSITE/device_today_counts.php`
-- deployed path example: `http://<host>/device_today_counts.php?device_id=pi-room-01`
+- Beispiel für den deployten Pfad: `http://<host>/device_today_counts.php?device_id=pi-room-01`
 
-Behavior:
+Verhalten:
 
-- `GET` only; no database writes or retry side effects
-- reads only from `measurements`
-- returns today's `good` / `neutral` / `bad` counts for the resolved location
-- accepts `location_id` directly or resolves the current location via `device_location_history`
-- uses the same optional `X-Device-Token` model as `device_ingest.php`
+- nur `GET`; keine Datenbankschreibvorgänge und keine Retry-Nebeneffekte
+- liest ausschließlich aus `measurements`
+- liefert die heutigen Zähler für `good` / `neutral` / `bad` für den aufgelösten Standort zurück
+- akzeptiert `location_id` direkt oder löst den aktuellen Standort über `device_location_history` auf
+- verwendet dasselbe optionale `X-Device-Token`-Modell wie `device_ingest.php`
 
-### Supported POST JSON formats
+### Unterstützte POST-JSON-Formate
 
-1) Direct measurement format:
+1) Direktes Messformat:
 
 ```json
 {
@@ -92,7 +95,7 @@ Behavior:
 }
 ```
 
-2) Raspberry Pi live mood event format:
+2) Raspberry-Pi-Live-Stimmungsereignis-Format:
 
 ```json
 {
@@ -105,7 +108,7 @@ Behavior:
 }
 ```
 
-3) Raspberry Pi 15-minute sensor aggregate payload format (from `device/upload_service.py`):
+3) Raspberry-Pi-Payload-Format für 15-Minuten-Sensoraggregate (aus `device/upload_service.py`):
 
 ```json
 {
@@ -122,33 +125,33 @@ Behavior:
 }
 ```
 
-Sensor aggregate payloads do not create mood votes. The `period_end – period_start` interval is
-15 minutes (windows: `HH:00–HH:15`, `HH:15–HH:30`, `HH:30–HH:45`, `HH:45–HH+1:00`).
-Each completed window produces at most one stored row (server enforces uniqueness via
-`UNIQUE KEY (location_id, period_start, period_end)`; duplicate submissions receive `409`).
-For multi-device setups, include `location_id` explicitly in payloads.
+Sensor-Aggregat-Payloads erzeugen keine Stimmungsvotes. Das Intervall `period_end – period_start` beträgt
+15 Minuten (Fenster: `HH:00–HH:15`, `HH:15–HH:30`, `HH:30–HH:45`, `HH:45–HH+1:00`).
+Jedes abgeschlossene Fenster erzeugt höchstens eine gespeicherte Zeile (der Server erzwingt Eindeutigkeit über
+`UNIQUE KEY (location_id, period_start, period_end)`; doppelte Übermittlungen erhalten `409`).
+Für Multi-Device-Setups `location_id` explizit in den Payloads angeben.
 
 ---
 
-## PHP database configuration (production)
+## PHP-Datenbankkonfiguration (Produktion)
 
-Main config file:
+Hauptkonfigurationsdatei:
 
 - `server/WEBSITE/db.php`
 
-Local override file — **server-local only, never committed**:
+Lokale Override-Datei — **nur serverlokal, nie committen**:
 
 - `server/WEBSITE/db.local.php`
 
-This file is listed in `.gitignore` and excluded from all deploys.
-Copy the example to create it on a new server:
+Diese Datei ist in `.gitignore` aufgeführt und von allen Deploys ausgeschlossen.
+Kopiere das Beispiel, um sie auf einem neuen Server anzulegen:
 
 ```bash
 cp server/WEBSITE/db.local.example.php /var/www/html/stimmungsbarometer/db.local.php
-# then edit with real credentials and token
+# anschließend mit echten Zugangsdaten und Token bearbeiten
 ```
 
-Example (`db.local.example.php`):
+Beispiel (`db.local.example.php`):
 
 ```php
 <?php
@@ -164,11 +167,11 @@ return [
 
 ---
 
-## Raspberry Pi runtime/deploy hygiene
+## Raspberry-Pi-Runtime-/Deploy-Hygiene
 
-For Raspberry Pi desktop autostart + local secret handling, use [`PI_SETUP.md`](PI_SETUP.md).
+Für Desktop-Autostart auf dem Raspberry Pi und lokales Secret-Handling siehe [`PI_SETUP.md`](PI_SETUP.md).
 
-Quick start:
+Schnellstart:
 
 ```bash
 cp .env.device.example .env.device
@@ -176,18 +179,18 @@ cp .env.device.example .env.device
 ./start_ui.sh
 ```
 
-### Current recommended runtime model
+### Aktuell empfohlenes Runtime-Modell
 
-The Raspberry Pi UI should run as a **desktop application** started from desktop autostart.
-Do **not** run a second `device.main` instance via `systemd` at the same time.
+Die Raspberry-Pi-UI sollte als **Desktop-Anwendung** laufen, die über den Desktop-Autostart gestartet wird.
+`device.main` darf **nicht** gleichzeitig ein zweites Mal über `systemd` laufen.
 
-- Keep exactly **one** running `python -m device.main` process.
-- Use `./start_ui.sh` for startup, `./restart_ui.sh` for restart, and `./update_pi.sh` for deploy/update.
-- Desktop autostart is the preferred way when the UI must be visible on the Pi display.
-- A parallel `systemd` service for `device.main` can cause duplicate uploads and inflated dashboard counts.
-- `start_ui.sh` has duplicate-start protection and may log a skip instead of starting a second process.
+- Es darf genau **ein** laufender Prozess `python -m device.main` existieren.
+- Für den Start `./start_ui.sh`, für Neustarts `./restart_ui.sh` und für Deploy/Update `./update_pi.sh` verwenden.
+- Desktop-Autostart ist der bevorzugte Weg, wenn die UI auf dem Pi-Display sichtbar sein muss.
+- Ein paralleler `systemd`-Service für `device.main` kann doppelte Uploads und aufgeblähte Dashboard-Zähler verursachen.
+- `start_ui.sh` hat einen Schutz vor Doppelstarts und kann statt eines zweiten Starts einen Skip protokollieren.
 
-### Clean restart on the Pi
+### Sauberer Neustart auf dem Pi
 
 ```bash
 cd ~/Desktop/SIA_V2
@@ -196,27 +199,27 @@ pgrep -af "python -m device.main"
 pgrep -fc "python -m device.main"
 ```
 
-### If stale pending uploads must be discarded intentionally
+### Wenn veraltete Pending-Uploads bewusst verworfen werden sollen
 
 ```bash
 printf '[]\n' > ~/Desktop/SIA_V2/device/pending_uploads.json
 ```
 
-Only do this if you explicitly want to drop old buffered uploads instead of retrying them.
+Das nur tun, wenn alte gepufferte Uploads ausdrücklich verworfen statt erneut versucht werden sollen.
 
 ---
 
-## Raspberry Pi upload configuration
+## Raspberry-Pi-Upload-Konfiguration
 
-Device defaults in `device/config.py` now point to the PHP ingest path:
+Die Device-Defaults in `device/config.py` zeigen jetzt auf den PHP-Ingest-Pfad:
 
-- `SIA_SERVER_URL` default: `http://100.74.7.35`
-- `SIA_UPLOAD_ENDPOINT` default: `/device_ingest.php`
-- `SIA_HEALTH_ENDPOINT` default: `/device_ingest.php`
-- `SIA_TODAY_COUNTS_ENDPOINT` default: `/device_today_counts.php`
-- `SIA_DEVICE_TOKEN` optional (sent as `X-Device-Token`)
+- `SIA_SERVER_URL` Standard: `http://100.74.7.35`
+- `SIA_UPLOAD_ENDPOINT` Standard: `/device_ingest.php`
+- `SIA_HEALTH_ENDPOINT` Standard: `/device_ingest.php`
+- `SIA_TODAY_COUNTS_ENDPOINT` Standard: `/device_today_counts.php`
+- `SIA_DEVICE_TOKEN` optional (wird als `X-Device-Token` gesendet)
 
-Example override:
+Beispiel für Overrides:
 
 ```bash
 export SIA_SERVER_URL="http://YOUR_HOST"
@@ -227,40 +230,40 @@ export SIA_DEVICE_TOKEN="CHANGE_ME_DEVICE_TOKEN"
 python -m device.main
 ```
 
-The Pi UI uses the server counts as the base value and applies in-memory optimistic
-pending deltas for local button presses. A value such as `12*` means the UI is
-showing a locally pending increment that has not yet been reconciled with the
-authoritative server count.
+Die Pi-UI nutzt die Server-Zähler als Basiswert und wendet im Speicher optimistische
+Pending-Deltas für lokale Tastendrücke an. Ein Wert wie `12*` bedeutet, dass die UI
+lokal eine ausstehende Erhöhung anzeigt, die noch nicht mit dem maßgeblichen
+Server-Zähler abgeglichen wurde.
 
 ---
 
-## Admin functions (production PHP app)
+## Admin-Funktionen (produktive PHP-App)
 
-All admin pages are accessible from the **Admin-Bereich** (`/admin.php` or the equivalent
-deployed URL, e.g. `http://<host>/stimmungsbarometer/admin.php`).  
-Login as admin is required; non-admin users are redirected to the dashboard.
+Alle Admin-Seiten sind über den **Admin-Bereich** zugänglich (`/admin.php` oder die entsprechend
+deployte URL, z. B. `http://<host>/stimmungsbarometer/admin.php`).  
+Ein Admin-Login ist erforderlich; Nicht-Admin-Benutzer werden zum Dashboard weitergeleitet.
 
-| Page | Path | Description |
+| Seite | Pfad | Beschreibung |
 |---|---|---|
-| Admin overview | `admin.php` | Navigation hub for all admin functions |
-| Manage locations | `admin_locations.php` | View, edit, delete locations |
-| Add location | `add_location.php` | Create a new location |
-| Add measurement | `add_measurement.php` | Manually add a measurement row |
-| Device location | `device_location.php` | Record when the device moved to a new location |
-| User management | `admin_users.php` | Create/update users and roles |
-| Delete measurements | `delete_measurements.php` | Filter and delete measurement rows (admin-only, POST-only, preview required before delete) |
+| Admin-Übersicht | `admin.php` | Navigationszentrale für alle Admin-Funktionen |
+| Standorte verwalten | `admin_locations.php` | Standorte ansehen, bearbeiten, löschen |
+| Standort hinzufügen | `add_location.php` | Einen neuen Standort anlegen |
+| Messung hinzufügen | `add_measurement.php` | Manuell eine Messzeile hinzufügen |
+| Gerätestandort | `device_location.php` | Festhalten, wann das Gerät an einen neuen Standort verschoben wurde |
+| Benutzerverwaltung | `admin_users.php` | Benutzer und Rollen anlegen/aktualisieren |
+| Messungen löschen | `delete_measurements.php` | Messzeilen filtern und löschen (nur Admin, nur POST, Vorschau vor dem Löschen erforderlich) |
 
-### Delete measurements — safety flow
+### Messungen löschen — Sicherheitsablauf
 
-`delete_measurements.php` enforces a mandatory two-step flow:
+`delete_measurements.php` erzwingt einen obligatorischen Zwei-Schritt-Ablauf:
 
-1. **Set filters** (location, date range, mood) — at least one filter is required.
-2. **Preview**: shows the count of matching rows; a server-side session token is issued.
-3. **Confirm**: tick the checkbox and submit the delete form — the session token must match
-   (prevents bypassing the preview via direct POST).
-4. **Result**: the page shows the number of actually deleted rows.
+1. **Filter setzen** (Standort, Datumsbereich, Stimmung) — mindestens ein Filter ist erforderlich.
+2. **Vorschau**: zeigt die Anzahl passender Zeilen; ein serverseitiges Session-Token wird ausgestellt.
+3. **Bestätigen**: Checkbox aktivieren und das Löschformular absenden — das Session-Token muss übereinstimmen
+   (verhindert das Umgehen der Vorschau per direktem POST).
+4. **Ergebnis**: Die Seite zeigt die Anzahl der tatsächlich gelöschten Zeilen.
 
-No deletion is possible via GET requests or without completing the preview step.
+Löschen ist weder per GET noch ohne abgeschlossenen Vorschau-Schritt möglich.
 
 ---
 
@@ -288,7 +291,7 @@ sudo bash scripts/cleanup_production_data.sh
 4. Löschen von Messungen mit Zukunfts-Timestamp
 5. Löschen offensichtlicher Dummy-/Testwerte
 6. Löschen von Messungen vor dem dokumentierten Produktionsstart
-7. Deaktivieren bekannter Test-Locations
+7. Deaktivieren bekannter Test-Standorte
 8. Neuberechnung von `sensor_hourly_aggregates`
 9. Abschlusskontrolle per SQL-Selects
 
@@ -307,40 +310,37 @@ sudo mysql stimmungsbarometer < .db-backups/pre_cleanup_YYYYMMDD_HHMMSS.sql
 
 ---
 
-## Operational checklist (production)
+## Betriebliche Checkliste (Produktion)
 
 ### Services
 
-- [ ] MariaDB running
-- [ ] nginx running
-- [ ] php-fpm running
+- [ ] MariaDB läuft
+- [ ] nginx läuft
+- [ ] php-fpm läuft
 
-### Web app reachability
+### Erreichbarkeit der Web-App
 
-- [ ] `http://127.0.0.1/login.php` returns page (or expected redirect/auth behavior)
-- [ ] `http://127.0.0.1/dashboard.php` reachable after login
+- [ ] `http://127.0.0.1/login.php` liefert eine Seite (oder das erwartete Redirect-/Auth-Verhalten)
+- [ ] `http://127.0.0.1/dashboard.php` ist nach dem Login erreichbar
 
-### MariaDB checks
+### MariaDB-Prüfungen
 
-- [ ] Database `stimmungsbarometer` exists
-- [ ] Tables `users`, `locations`, `measurements`, `sensor_hourly_aggregates`, `device_location_history` exist
-- [ ] DB credentials in `db.local.php` are valid
+- [ ] Datenbank `stimmungsbarometer` existiert
+- [ ] Tabellen `users`, `locations`, `measurements`, `sensor_hourly_aggregates`, `device_location_history` existieren
+- [ ] DB-Zugangsdaten in `db.local.php` sind gültig
 
-### Device ingest checks
+### Prüfungen für Device-Ingest
 
-- [ ] `GET /device_ingest.php` returns JSON health
-- [ ] `POST /device_ingest.php` with a live payload stores one row in `measurements`
-- [ ] `POST /device_ingest.php` with an hourly sensor payload stores one row in `sensor_hourly_aggregates`
-- [ ] Dashboard mood counts change only after a live payload
-- [ ] Dashboard sensor values/charts change after an hourly sensor payload
+- [ ] `GET /device_ingest.php` liefert JSON-Health zurück
+- [ ] `POST /device_ingest.php` mit einem Live-Payload speichert eine Zeile in `measurements`
+- [ ] `POST /device_ingest.php` mit einem stündlichen Sensor-Payload speichert eine Zeile in `sensor_hourly_aggregates`
+- [ ] Dashboard-Stimmungszähler ändern sich nur nach einem Live-Payload
+- [ ] Dashboard-Sensorwerte/-Charts ändern sich nach einem stündlichen Sensor-Payload
 
-Example test POST:
+Beispiel-Test-POST:
 
 ```bash
-curl -i -X POST "http://127.0.0.1/device_ingest.php" \
-  -H "Content-Type: application/json" \
-  -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN" \
-  -d '{
+curl -i -X POST "http://127.0.0.1/device_ingest.php"   -H "Content-Type: application/json"   -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN"   -d '{
     "mood":"neutral",
     "co2":620,
     "humidity":41.7,
@@ -349,60 +349,58 @@ curl -i -X POST "http://127.0.0.1/device_ingest.php" \
   }'
 ```
 
-### Raspberry Pi checks
+### Raspberry-Pi-Prüfungen
 
-- [ ] Exactly **one** `device.main` process is running (double instances cause duplicate counts):
+- [ ] Genau **ein** `device.main`-Prozess läuft (Doppelinstanzen verursachen doppelte Zähler):
 
   ```bash
   pgrep -af "python -m device.main"
-  # must show exactly one line
+  # muss genau eine Zeile zeigen
   ```
 
-- [ ] The Pi UI is started from desktop autostart, not from a second parallel `systemd` device.main service.
+- [ ] Die Pi-UI wird über Desktop-Autostart gestartet, nicht über einen zweiten parallelen `systemd`-`device.main`-Service.
 
-- [ ] Upload endpoint reachable from Pi (uses `.env.device` settings):
+- [ ] Upload-Endpunkt ist vom Pi erreichbar (verwendet Einstellungen aus `.env.device`):
 
   ```bash
   cd ~/Desktop/SIA_V2
   ./manual_upload_test.sh
-  # expect HTTP 201 and {"status":"stored",...}
+  # erwartet HTTP 201 und {"status":"stored",...}
   ```
 
-- [ ] Read-only today-count endpoint reachable from Pi:
+- [ ] Read-only-Endpunkt für heutige Zähler ist vom Pi erreichbar:
 
   ```bash
-  curl -i \
-    -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN" \
-    "http://YOUR_HOST/device_today_counts.php?device_id=pi-room-01"
-  # expect HTTP 200 and JSON with status/date/timezone/location_id/device_id/counts/total
+  curl -i     -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN"     "http://YOUR_HOST/device_today_counts.php?device_id=pi-room-01"
+  # erwartet HTTP 200 und JSON mit status/date/timezone/location_id/device_id/counts/total
   ```
 
-- [ ] No stuck pending uploads:
+- [ ] Keine festhängenden Pending-Uploads:
 
   ```bash
   cat ~/Desktop/SIA_V2/device/pending_uploads.json
-  # normal: empty array [] or small number of entries that clear on next retry
+  # normal: leeres Array [] oder kleine Anzahl von Einträgen, die beim nächsten Retry verschwinden
   ```
 
-- [ ] Log shows no abnormal retry spam:
+- [ ] Log zeigt keinen auffälligen Retry-Spam:
 
   ```bash
   tail -n 40 ~/Desktop/SIA_V2/ui-autostart.log
   ```
 
-For full Pi setup instructions see [`PI_SETUP.md`](PI_SETUP.md).
+Für vollständige Pi-Setup-Anweisungen siehe [`PI_SETUP.md`](PI_SETUP.md).
 
 ---
 
-## Troubleshooting (Pi operations)
+## Troubleshooting (Pi-Betrieb)
 
-### Check for duplicate processes (most common cause of duplicate uploads / inflated counts)
+### Auf doppelte Prozesse prüfen (häufigste Ursache für doppelte Uploads / aufgeblähte Zähler)
 
 ```bash
 pgrep -af "python -m device.main"
 ```
 
-**Expect exactly one line.** If two or more appear, do a helper-script restart:
+**Es darf genau eine Zeile erscheinen.** Wenn zwei oder mehr erscheinen, einen Neustart per Hilfsskript ausführen:
 
 ```bash
 cd ~/Desktop/SIA_V2
@@ -411,25 +409,25 @@ pgrep -af "python -m device.main"
 pgrep -fc "python -m device.main"
 ```
 
-### Check live logs
+### Live-Logs prüfen
 
 ```bash
 tail -n 100 ~/Desktop/SIA_V2/ui-autostart.log
 tail -f ~/Desktop/SIA_V2/ui-autostart.log
 ```
 
-Normal output: sensor readings, successful upload messages.  
-Warning sign: `Retry: 0 gesendet, N offen` repeated without interruption → network or endpoint issue.
+Normale Ausgabe: Sensorwerte, erfolgreiche Upload-Meldungen.  
+Warnsignal: `Retry: 0 gesendet, N offen` wiederholt sich ohne Unterbrechung → Netzwerk- oder Endpunktproblem.
 
-### Check the retry buffer
+### Retry-Puffer prüfen
 
 ```bash
 cat ~/Desktop/SIA_V2/device/pending_uploads.json
 ```
 
-A large or growing file means uploads are failing.  
-Verify `.env.device` is correct and the server is reachable.
-If you intentionally want to discard stale buffered uploads, stop the app first and then reset the file:
+Eine große oder wachsende Datei bedeutet, dass Uploads fehlschlagen.  
+Prüfe, ob `.env.device` korrekt ist und der Server erreichbar ist.
+Wenn du veraltete gepufferte Uploads bewusst verwerfen willst, zuerst die App stoppen und dann die Datei zurücksetzen:
 
 ```bash
 pkill -f "python -m device.main"
@@ -438,32 +436,32 @@ cd ~/Desktop/SIA_V2
 ./restart_ui.sh
 ```
 
-### Check `.env.device` is complete
+### Prüfen, ob `.env.device` vollständig ist
 
 ```bash
 cat ~/Desktop/SIA_V2/.env.device
 ```
 
-Required keys: `SIA_SERVER_URL`, `SIA_UPLOAD_ENDPOINT`, `SIA_HEALTH_ENDPOINT`, `SIA_DEVICE_TOKEN`, `SIA_DEVICE_ID`.  
-`SIA_SIMULATION` must be absent or `false` when real hardware is connected.
+Erforderliche Schlüssel: `SIA_SERVER_URL`, `SIA_UPLOAD_ENDPOINT`, `SIA_HEALTH_ENDPOINT`, `SIA_DEVICE_TOKEN`, `SIA_DEVICE_ID`.  
+`SIA_SIMULATION` muss fehlen oder `false` sein, wenn echte Hardware angeschlossen ist.
 
-Correct endpoint paths:
+Korrekte Endpunkt-Pfade:
 
 ```
 SIA_UPLOAD_ENDPOINT=/device_ingest.php
 SIA_HEALTH_ENDPOINT=/device_ingest.php
 ```
 
-### Manual upload test
+### Manueller Upload-Test
 
 ```bash
 cd ~/Desktop/SIA_V2
 ./manual_upload_test.sh
 ```
 
-Expected: HTTP `201 Created` with `{"status":"stored",...}`.
+Erwartet: HTTP `201 Created` mit `{"status":"stored",...}`.
 
-### GPIO / button check
+### GPIO-/Button-Prüfung
 
 ```bash
 raspi-gpio get 17   # bad button
@@ -471,26 +469,26 @@ raspi-gpio get 22   # neutral button
 raspi-gpio get 27   # good button
 ```
 
-Stable `level=1` at rest (pull-up active) is correct.  
-Unstable or permanently `level=0` without pressing → check wiring, pull-up resistor, common ground.
+Ein stabiles `level=1` im Ruhezustand (Pull-up aktiv) ist korrekt.  
+Instabil oder dauerhaft `level=0` ohne Tastendruck → Verkabelung, Pull-up-Widerstand und gemeinsame Masse prüfen.
 
-### I2C / CO₂ sensor check
+### I2C-/CO₂-Sensor-Prüfung
 
 ```bash
-i2cdetect -y 1      # should show device at 0x62 (SCD41)
+i2cdetect -y 1      # sollte Gerät bei 0x62 (SCD41) zeigen
 dmesg | grep -i i2c
 ```
 
 ---
 
-## Python/FastAPI code in this repository (alternate/non-production path)
+## Python/FastAPI-Code in diesem Repository (alternativer/nicht-produktiver Pfad)
 
-The repository still contains:
+Das Repository enthält weiterhin:
 
-- Python device application (`/device`)
-- FastAPI backend (`/server/main.py`, `/server/routes`, SQLAlchemy models)
+- Python-Device-Anwendung (`/device`)
+- FastAPI-Backend (`/server/main.py`, `/server/routes`, SQLAlchemy-Modelle)
 
-This is useful for development/experimentation and remains in the repo, but it is **not the currently active production deployment path** described above.
+Das ist nützlich für Entwicklung/Experimente und bleibt im Repository, ist aber **nicht der aktuell aktive Produktions-Deploy-Pfad**, der oben beschrieben ist.
 
 ---
 

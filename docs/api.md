@@ -1,14 +1,14 @@
-# API Reference
+# API-Referenz
 
-## Production endpoint (PHP)
+## Produktionsendpunkt (PHP)
 
-The active production ingest endpoint is part of the PHP app served by nginx on the server.
+Der aktive produktive Ingest-Endpunkt ist Teil der PHP-App, die vom Server per nginx ausgeliefert wird.
 
-### Health check
+### Health Check
 
 **`GET /device_ingest.php`**
 
-Returns `200` with JSON when the PHP app is reachable.
+Liefert `200` mit JSON, wenn die PHP-App erreichbar ist.
 
 ```json
 { "status": "ok", "service": "php-device-ingest" }
@@ -16,21 +16,21 @@ Returns `200` with JSON when the PHP app is reachable.
 
 ---
 
-### Ingest (device → server)
+### Ingest (Device → Server)
 
 **`POST /device_ingest.php`**
 
-The Raspberry Pi sends data here after each button press (live event) and once per
-15-minute sensor window (aggregate).
+Der Raspberry Pi sendet hierhin Daten nach jedem Tastendruck (Live-Event) und einmal pro
+15-Minuten-Sensorfenster (Aggregat).
 
-**Authentication (optional, recommended)**
+**Authentifizierung (optional, empfohlen)**
 
-Send the shared secret as the `X-Device-Token` HTTP header.  
-Configure the token in `server/WEBSITE/db.local.php` as `device_ingest_token`.
+Das Shared Secret als HTTP-Header `X-Device-Token` senden.  
+Das Token in `server/WEBSITE/db.local.php` als `device_ingest_token` konfigurieren.
 
-**Supported request body formats**
+**Unterstützte Request-Body-Formate**
 
-1. Direct measurement (single row):
+1. Direkte Messung (einzelne Zeile):
 
 ```json
 {
@@ -43,7 +43,7 @@ Configure the token in `server/WEBSITE/db.local.php` as `device_ingest_token`.
 }
 ```
 
-2. Raspberry Pi 15-minute sensor aggregate (from `device/upload_service.py`):
+2. Raspberry-Pi-15-Minuten-Sensoraggregat (aus `device/upload_service.py`):
 
 ```json
 {
@@ -60,10 +60,10 @@ Configure the token in `server/WEBSITE/db.local.php` as `device_ingest_token`.
 }
 ```
 
-`location_id` is resolved from `device_location_history` if not supplied.
-Sensor aggregate uploads do not create mood rows in `measurements`.
+`location_id` wird aus `device_location_history` aufgelöst, wenn sie nicht mitgegeben wird.
+Sensor-Aggregat-Uploads erzeugen keine Stimmungszeilen in `measurements`.
 
-**Response 201** – row stored:
+**Antwort 201** – Zeile gespeichert:
 
 ```json
 {
@@ -74,26 +74,26 @@ Sensor aggregate uploads do not create mood rows in `measurements`.
 }
 ```
 
-**Response 400** – missing or invalid fields.  
-**Response 401** – missing/invalid token (only when token is configured).  
-**Response 422** – no device location configured for the given timestamp.  
-**Response 500** – database error.
+**Antwort 400** – fehlende oder ungültige Felder.  
+**Antwort 401** – fehlendes/ungültiges Token (nur wenn ein Token konfiguriert ist).  
+**Antwort 422** – kein Gerätestandort für den angegebenen Zeitstempel konfiguriert.  
+**Antwort 500** – Datenbankfehler.
 
 ---
 
-### Today mood counts (server → device, read-only)
+### Heutige Stimmungszähler (Server → Device, Read-only)
 
 **`GET /device_today_counts.php?device_id=pi-room-01`**
 
-Returns today's authoritative mood counts for the current location.
+Liefert die maßgeblichen heutigen Stimmungszähler für den aktuellen Standort zurück.
 
-- reads only from `measurements`
-- never writes to the database
-- accepts optional `location_id`
-- otherwise resolves the location via `device_location_history`
-- uses the same optional `X-Device-Token` header as `device_ingest.php`
+- liest ausschließlich aus `measurements`
+- schreibt nie in die Datenbank
+- akzeptiert optional `location_id`
+- löst andernfalls den Standort über `device_location_history` auf
+- verwendet denselben optionalen `X-Device-Token`-Header wie `device_ingest.php`
 
-**Response 200**
+**Antwort 200**
 
 ```json
 {
@@ -111,42 +111,40 @@ Returns today's authoritative mood counts for the current location.
 }
 ```
 
-Zero-count days still return `200` with zero values.
+Tage mit Nullwerten liefern weiterhin `200` mit Nullwerten.
 
-**Pi terminal check**
+**Terminal-Prüfung auf dem Pi**
 
 ```bash
-curl -i \
-  -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN" \
-  "http://YOUR_HOST/device_today_counts.php?device_id=pi-room-01"
+curl -i   -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN"   "http://YOUR_HOST/device_today_counts.php?device_id=pi-room-01"
 ```
 
 ---
 
-### Dashboard data
+### Dashboard-Daten
 
-The PHP dashboard reads directly from the `measurements` MariaDB table via
-`dashboard_data_service.php`.  There is no separate JSON API for the dashboard;
-it is server-rendered PHP.
+Das PHP-Dashboard liest direkt aus der MariaDB-Tabelle `measurements` über
+`dashboard_data_service.php`. Es gibt keine separate JSON-API für das Dashboard;
+es ist serverseitig gerendertes PHP.
 
-Available ranges (query parameter `range`): `tag`, `woche`, `monat`, `jahr`, `gesamt`.
+Verfügbare Bereiche (Query-Parameter `range`): `tag`, `woche`, `monat`, `jahr`, `gesamt`.
 
 ---
 
-## Alternate / development endpoint (FastAPI – not in production)
+## Alternativer / Entwicklungs-Endpunkt (FastAPI – nicht in Produktion)
 
-The repository contains a FastAPI backend (`server/main.py`, `server/routes/`) that was
-the original prototype.  It is **not deployed** in the current production environment.
+Das Repository enthält ein FastAPI-Backend (`server/main.py`, `server/routes/`), das
+ursprünglich der Prototyp war. Es ist in der aktuellen Produktionsumgebung **nicht deployt**.
 
-Base URL when running locally: `http://localhost:8000`  
-Interactive docs: `http://localhost:8000/docs`
+Base-URL beim lokalen Betrieb: `http://localhost:8000`  
+Interaktive Doku: `http://localhost:8000/docs`
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/v1/health` | Health check |
-| `POST /api/v1/ingest/hourly` | Hourly aggregate ingest |
-| `GET /api/v1/devices/{id}/summary` | Mood + sensor summary |
-| `GET /api/v1/summary/global` | Global summary across all devices |
-| `GET /api/v1/devices/{id}/history` | Time-series history |
+| Endpunkt | Beschreibung |
+|----------|--------------|
+| `GET /api/v1/health` | Health Check |
+| `POST /api/v1/ingest/hourly` | Hourly-Aggregat-Ingest |
+| `GET /api/v1/devices/{id}/summary` | Stimmungs- + Sensorzusammenfassung |
+| `GET /api/v1/summary/global` | Globale Zusammenfassung über alle Devices |
+| `GET /api/v1/devices/{id}/history` | Time-Series-Historie |
 
-See the inline Swagger docs (`/docs`) for full request/response schemas when running locally.
+Siehe die eingebettete Swagger-Doku (`/docs`) für vollständige Request-/Response-Schemas im lokalen Betrieb.
