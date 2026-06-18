@@ -89,7 +89,7 @@ def test_build_15min_payload_boundary_windows() -> None:
     assert payload.period_end == datetime(2024, 1, 1, 10, 15, 0)
 
 
-
+def test_build_hourly_payload_calculates_average_values() -> None:
     service = AggregationService()
     now = datetime(2024, 1, 1, 10, 0, 0)
     samples = [
