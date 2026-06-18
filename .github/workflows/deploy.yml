@@ -74,4 +74,10 @@ jobs:
               .venv/bin/pip install --quiet -r requirements-device.txt
             fi
 
+            # Clear stale buffered upload data so that old mood events from
+            # previous runs are not re-uploaded to production after a deploy.
+            # Any events that were never successfully sent will be lost, but
+            # this is the safe default: fresh deploy = clean upload state.
+            rm -f device/pending_uploads.json
+
             sudo systemctl restart sia-device
