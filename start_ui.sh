@@ -35,7 +35,7 @@ fi
 # started by systemd or a previous autostart), skip startup and exit cleanly.
 # This prevents two processes from uploading the same mood events when both
 # the systemd service and the desktop autostart entry are active.
-if pgrep -f "python -m device.main" >/dev/null 2>&1; then
+if pgrep -f "python -m device\.main" >/dev/null 2>&1; then
     echo "[$(date -Iseconds)] device.main is already running; skipping duplicate startup" >&2
     exit 0
 fi

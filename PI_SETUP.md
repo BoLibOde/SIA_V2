@@ -125,6 +125,7 @@ If your Pi has an existing `device/pending_uploads.json` with old buffered event
 remove it once before the next update to avoid uploading stale data to production:
 
 ```bash
+# Adjust the path if your SIA_V2 installation is not in ~/Desktop/SIA_V2
 rm -f ~/Desktop/SIA_V2/device/pending_uploads.json
 ```
 
