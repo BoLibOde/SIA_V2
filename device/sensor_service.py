@@ -24,6 +24,20 @@ COMMAND_READ_MEASUREMENT = [0xEC, 0x05]
 COMMAND_STOP_MEASUREMENT = [0x3F, 0x86]
 COMMAND_SOFT_RESET = [0x36, 0x82]
 
+# Resilience knobs
+_INIT_RETRIES = 5          # max consecutive init failures before falling back to simulation
+_MAX_READ_ERRORS = 5       # consecutive read errors that trigger a hardware-session restart
+_INIT_RETRY_DELAY = 2.0    # seconds between init attempts
+_REINIT_DELAY = 2.0        # seconds before restarting after read-error recovery
+
+# Plausibility bounds for raw SCD41 output
+_CO2_MIN_PPM = 350
+_CO2_MAX_PPM = 5000
+_TEMP_MIN_C = -20.0
+_TEMP_MAX_C = 65.0
+_HUMIDITY_MIN_PCT = 0.0
+_HUMIDITY_MAX_PCT = 100.0
+
 
 def calculate_crc(data: list[int]) -> int:
     crc = 0xFF
@@ -41,6 +55,8 @@ def _is_data_ready(bus: SMBus, address: int) -> bool:
     bus.write_i2c_block_data(address, COMMAND_GET_DATA_READY[0], COMMAND_GET_DATA_READY[1:])
     time.sleep(0.005)
     response = bus.read_i2c_block_data(address, 0x00, 3)
+    if calculate_crc(response[0:2]) != response[2]:
+        raise ValueError("CRC mismatch on data-ready response")
     word = (response[0] << 8) | response[1]
     return word != 0
 
@@ -62,6 +78,14 @@ def _read_measurement(bus: SMBus, address: int) -> tuple[int, float, float]:
 
     temp = -45 + (175 * temp_raw) / 65535.0
     humidity = 100 * humidity_raw / 65535.0
+
+    if not (_CO2_MIN_PPM <= co2 <= _CO2_MAX_PPM):
+        raise ValueError(f"Implausible CO2: {co2} ppm")
+    if not (_TEMP_MIN_C <= temp <= _TEMP_MAX_C):
+        raise ValueError(f"Implausible temperature: {temp:.2f} °C")
+    if not (_HUMIDITY_MIN_PCT <= humidity <= _HUMIDITY_MAX_PCT):
+        raise ValueError(f"Implausible humidity: {humidity:.2f} %")
+
     return co2, temp, humidity
 
 
@@ -126,39 +150,104 @@ class SensorService:
         )
 
     def _hardware_loop(self) -> None:
-        try:
-            with SMBus(1) as bus:
-                bus.write_i2c_block_data(SCD41_I2C_ADDR, COMMAND_SOFT_RESET[0], COMMAND_SOFT_RESET[1:])
-                time.sleep(1.0)
+        init_failures = 0
 
-                bus.write_i2c_block_data(SCD41_I2C_ADDR, COMMAND_START_MEASUREMENT[0], COMMAND_START_MEASUREMENT[1:])
-                time.sleep(5.0)
-
+        while self.running:
+            if init_failures >= _INIT_RETRIES:
+                _LOG.warning(
+                    "SCD41 hardware mode failed after %d attempts, switching to simulation",
+                    _INIT_RETRIES,
+                )
                 while self.running:
-                    try:
-                        if _is_data_ready(bus, SCD41_I2C_ADDR):
-                            co2, temp, humidity = _read_measurement(bus, SCD41_I2C_ADDR)
-                            reading = SensorReading(
-                                temperature_c=round(temp, 2),
-                                humidity_pct=round(humidity, 2),
-                                co2_ppm=int(co2),
-                                timestamp=datetime.now(UTC),
-                            )
-                            self._append_reading(reading)
-                    except Exception as error:
-                        _LOG.warning("SCD41 read failed: %s", error)
-
+                    self._append_reading(self._simulated_read())
                     time.sleep(self.read_interval_seconds)
+                return
 
-                try:
-                    bus.write_i2c_block_data(SCD41_I2C_ADDR, COMMAND_STOP_MEASUREMENT[0], COMMAND_STOP_MEASUREMENT[1:])
-                except Exception:
-                    pass
-        except Exception as error:
-            _LOG.warning("SCD41 hardware mode failed, switching to simulation: %s", error)
-            while self.running:
-                self._append_reading(self._simulated_read())
-                time.sleep(self.read_interval_seconds)
+            if init_failures > 0:
+                time.sleep(_INIT_RETRY_DELAY)
+
+            read_restart = False
+            try:
+                with SMBus(1) as bus:
+                    # Stop any in-progress measurement before resetting
+                    try:
+                        bus.write_i2c_block_data(
+                            SCD41_I2C_ADDR,
+                            COMMAND_STOP_MEASUREMENT[0],
+                            COMMAND_STOP_MEASUREMENT[1:],
+                        )
+                        time.sleep(0.5)
+                    except OSError as _stop_err:
+                        _LOG.debug("SCD41 pre-reset stop failed (ignored): %s", _stop_err)
+
+                    bus.write_i2c_block_data(
+                        SCD41_I2C_ADDR,
+                        COMMAND_SOFT_RESET[0],
+                        COMMAND_SOFT_RESET[1:],
+                    )
+                    time.sleep(1.0)
+
+                    bus.write_i2c_block_data(
+                        SCD41_I2C_ADDR,
+                        COMMAND_START_MEASUREMENT[0],
+                        COMMAND_START_MEASUREMENT[1:],
+                    )
+                    time.sleep(5.0)
+
+                    _LOG.info("SCD41 hardware mode initialized successfully")
+                    init_failures = 0
+
+                    consecutive_errors = 0
+                    while self.running:
+                        try:
+                            if _is_data_ready(bus, SCD41_I2C_ADDR):
+                                co2, temp, humidity = _read_measurement(bus, SCD41_I2C_ADDR)
+                                self._append_reading(
+                                    SensorReading(
+                                        temperature_c=round(temp, 2),
+                                        humidity_pct=round(humidity, 2),
+                                        co2_ppm=int(co2),
+                                        timestamp=datetime.now(UTC),
+                                    )
+                                )
+                            consecutive_errors = 0
+                        except Exception as error:
+                            consecutive_errors += 1
+                            _LOG.warning(
+                                "SCD41 read failed (%d/%d): %s",
+                                consecutive_errors,
+                                _MAX_READ_ERRORS,
+                                error,
+                            )
+                            if consecutive_errors >= _MAX_READ_ERRORS:
+                                _LOG.warning(
+                                    "Too many consecutive SCD41 read errors, restarting hardware session"
+                                )
+                                read_restart = True
+                                break
+
+                        time.sleep(self.read_interval_seconds)
+
+                    try:
+                        bus.write_i2c_block_data(
+                            SCD41_I2C_ADDR,
+                            COMMAND_STOP_MEASUREMENT[0],
+                            COMMAND_STOP_MEASUREMENT[1:],
+                        )
+                    except OSError as _stop_err:
+                        _LOG.debug("SCD41 post-loop stop failed (ignored): %s", _stop_err)
+
+            except Exception as error:
+                init_failures += 1
+                _LOG.warning(
+                    "SCD41 init attempt %d/%d failed: %s",
+                    init_failures,
+                    _INIT_RETRIES,
+                    error,
+                )
+
+            if read_restart and self.running:
+                time.sleep(_REINIT_DELAY)
 
     def _loop(self) -> None:
         if self.simulation_mode or not SMBUS2_AVAILABLE:
