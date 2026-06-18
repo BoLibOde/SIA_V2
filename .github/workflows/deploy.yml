@@ -21,7 +21,7 @@ jobs:
           tags: tag:ci
           use-cache: true
 
-      - name: Deploy website and refresh database via SSH over Tailscale
+      - name: Deploy website via SSH over Tailscale
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: 100.74.7.35
@@ -34,8 +34,7 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
-            chmod +x scripts/refresh_database.sh scripts/deploy_website.sh
-            sudo bash scripts/refresh_database.sh
+            chmod +x scripts/deploy_website.sh
 
             if [ ! -f /var/www/html/stimmungsbarometer/db.local.php ]; then
               sudo mkdir -p /var/www/html/stimmungsbarometer

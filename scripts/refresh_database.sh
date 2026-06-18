@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# WARNING: Destructive reset helper.
+# This script drops and recreates the stimmungsbarometer database from
+# server/stimmungsbarometer.sql and is intended only for explicit manual
+# bootstrap/recovery operations, never for routine production deploys.
 set -euo pipefail
 
 DB_NAME="stimmungsbarometer"
