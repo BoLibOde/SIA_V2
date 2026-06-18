@@ -1,7 +1,8 @@
 # Raspberry Pi UI runtime + device secret handling
 
-The Raspberry Pi UI is managed via the `sia-device` systemd service or a desktop
-autostart entry (both are supported). See section 4 and section 5 for setup details.
+The Raspberry Pi UI should run as a **desktop application** via desktop autostart so the
+Pygame window is visible on the Pi display.
+
 Use the repository root helper scripts below.
 
 ## 1) Create local device env file
@@ -43,7 +44,6 @@ chmod +x start_ui.sh
 - activates `.venv`
 - loads `.env.device`
 - exports `SIA_SERVER_URL`, `SIA_UPLOAD_ENDPOINT`, `SIA_HEALTH_ENDPOINT`, `SIA_DEVICE_TOKEN`, `SIA_DEVICE_ID`
-- **checks if `device.main` is already running and exits immediately if so** (prevents double instances)
 - starts `python -m device.main`
 - writes app output to `ui-autostart.log`
 
@@ -77,62 +77,81 @@ chmod +x restart_ui.sh update_pi.sh
 - fetch and fast-forward to `origin/main` in a predictable way
 - preserve local `.env.device`
 - refresh device Python dependencies
-- **clear `device/pending_uploads.json`** to prevent stale buffered events from being re-uploaded
-- **restart the running UI automatically via `restart_ui.sh`** (step 4/4)
+- restart the running UI automatically via `restart_ui.sh`
 
 > **Important:** After any code change (manual `git pull`, file copy, etc.) the running
 > Python process does **not** pick up new code automatically — it must be restarted.
-> `update_pi.sh` handles this automatically.  If you deploy by any other means, run
-> `./restart_ui.sh` afterwards to apply the changes.
+> `update_pi.sh` handles this automatically. If you deploy by any other means, restart
+> the UI manually afterwards.
 
-Upload safety note:
+## 6) Single-instance rule
 
-- Failed uploads from the **current session** continue to be buffered in `device/pending_uploads.json` and retried in the background.
-- On each deploy or `./update_pi.sh`, the buffer is **cleared** so that old events accumulated across previous runs are not re-uploaded to production.
-- Duplicate hourly aggregate entries in the buffer are collapsed automatically on the next retry cycle.
+Keep exactly **one** `python -m device.main` process running.
 
-### Double-instance prevention
+Do **not** run a parallel `systemd` service for `device.main` at the same time as desktop autostart.
+That combination can cause duplicate uploads and inflated dashboard counts.
 
-`start_ui.sh` now checks whether `device.main` is already running before starting a
-new instance. If a process is already active (e.g. started by the systemd service),
-`start_ui.sh` exits immediately without launching a second process.
-
-This means you can safely have **both** the systemd service **and** the desktop
-autostart entry configured: only one instance will run.
-
-Recommended single-instance setup:
+Recommended setup for a visible Pi UI:
 
 ```bash
-# Enable and start the systemd service (primary, survives reboots)
-sudo systemctl enable sia-device
-sudo systemctl start sia-device
-
-# Desktop autostart entry (start_ui.sh) acts as a fallback only;
-# if the service is already running it will exit without duplicating the process.
+sudo systemctl disable --now sia-device
 ```
 
-If you want to use **only** the desktop autostart (no systemd):
+Then let the desktop autostart entry launch the app on login.
+
+Check the running process count with:
 
 ```bash
-sudo systemctl disable sia-device
-sudo systemctl stop sia-device
-# Desktop autostart will start the app on next login.
+pgrep -af "python -m device.main"
+pgrep -fc "python -m device.main"
 ```
 
-### Migration: clearing stale data on an existing Pi
+Expected result:
 
-If your Pi has an existing `device/pending_uploads.json` with old buffered events,
-remove it once before the next update to avoid uploading stale data to production:
+- exactly one process line
+- count = `1`
+
+## 7) Clean restart
 
 ```bash
-# Adjust the path if your SIA_V2 installation is not in ~/Desktop/SIA_V2
-rm -f ~/Desktop/SIA_V2/device/pending_uploads.json
+pkill -f "python -m device.main"
+sleep 2
+cd ~/Desktop/SIA_V2
+./start_ui.sh &
 ```
 
-This is done automatically by `./update_pi.sh` and by the CI deploy workflow going
-forward.
+## 8) Retry buffer / stale upload cleanup
 
-## 6) Manual restart only (no update)
+Failed uploads are buffered locally in:
+
+```text
+device/pending_uploads.json
+```
+
+Check it with:
+
+```bash
+cat ~/Desktop/SIA_V2/device/pending_uploads.json
+```
+
+Normal state:
+
+```json
+[]
+```
+
+If the file contains old buffered events that you **intentionally want to discard** before the next start:
+
+```bash
+pkill -f "python -m device.main"
+printf '[]\n' > ~/Desktop/SIA_V2/device/pending_uploads.json
+cd ~/Desktop/SIA_V2
+./start_ui.sh &
+```
+
+Only do this if you explicitly want to drop old buffered uploads instead of retrying them.
+
+## 9) Manual restart only (no update)
 
 If you only need to restart the app without pulling new code:
 
