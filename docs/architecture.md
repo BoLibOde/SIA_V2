@@ -17,7 +17,7 @@ Raspberry Pi (device/)          Server (server/WEBSITE/)     Browser
 
 ## Data flow (production)
 
-1. GPIO buttons on the device increment local mood counters; SCD41 sensor is read periodically.
+1. GPIO buttons on the device increment the visible Pi mood counters optimistically in memory; SCD41 sensor is read periodically.
    The visible Pi UI is started from desktop autostart using `start_ui.sh`; routine restart/deploy
    uses `restart_ui.sh` / `update_pi.sh`. Run only one `python -m device.main` instance (no parallel
    `systemd` runtime for `device.main`).
@@ -29,7 +29,9 @@ Raspberry Pi (device/)          Server (server/WEBSITE/)     Browser
    `sensor_hourly_aggregates` (MariaDB).  The two tracks are strictly separated: sensor aggregates
    do **not** create mood votes.
 4. The dashboard reads mood counts from `measurements` and sensor data from
-   `sensor_hourly_aggregates` via `dashboard_data_service.php`.
+   `sensor_hourly_aggregates` via `dashboard_data_service.php`. The Pi reads
+   today's authoritative mood counts from the read-only `device_today_counts.php`
+   endpoint and reconciles its optimistic local deltas after successful uploads.
 5. Failed uploads are buffered locally in `device/pending_uploads.json` and retried automatically.
    Duplicate aggregate submissions (same `location_id + period_start + period_end`) are rejected
    by the server with `409` and treated as success on the device side.
@@ -41,6 +43,8 @@ Raspberry Pi (device/)          Server (server/WEBSITE/)     Browser
 
 - MariaDB / SQL is the authoritative data store for SIA V2.
 - JSON (`pending_uploads.json`) is only a local retry buffer for offline/failed uploads.
+- The Pi's today's mood display uses server base counts plus in-memory pending deltas;
+  `pending_uploads.json` is never the source of truth for displayed counts.
 - Aggregation, filtering and historical views are handled server-side by PHP/SQL.
 
 ## Directory layout

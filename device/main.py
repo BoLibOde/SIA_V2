@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from device.aggregation_service import AggregationService
 from device.config import DeviceConfig
 from device.gpio_handler import GpioHandler
+from device.models import MoodCounts
 from device.sensor_service import SensorService
 from device.ui import DeviceUI
 from device.upload_service import UploadService
@@ -26,6 +27,7 @@ class DeviceApp:
             server_base_url=self.config.server_base_url,
             upload_endpoint=self.config.upload_endpoint,
             health_endpoint=self.config.health_endpoint,
+            today_counts_endpoint=self.config.today_counts_endpoint,
             device_token=self.config.device_token,
             retry_file=self.config.retry_file_path,
             timeout_seconds=self.config.upload_timeout_seconds,
@@ -39,6 +41,10 @@ class DeviceApp:
 
         self.running = False
         self.last_uploaded_period_end: datetime | None = None
+        self.today_base_counts = MoodCounts()
+        self.today_pending_counts = MoodCounts()
+        self.today_uploaded_pending_counts = MoodCounts()
+        self.today_counts_date = ""
 
         # Status shown in the UI status bar
         self._server_connected: bool = False
@@ -46,6 +52,8 @@ class DeviceApp:
 
         # Check server health on startup
         self._server_connected = self.upload_service.check_server_health()
+        today_counts_ok = self._refresh_today_counts()
+        self._server_connected = self._server_connected or today_counts_ok
 
     def run(self) -> None:
         self.running = True
@@ -59,10 +67,6 @@ class DeviceApp:
                 now = datetime.now(UTC)
                 latest = self.sensor_service.get_latest_reading()
                 self.gpio_handler.update()
-                hourly_counts = self.gpio_handler.get_hourly_counts()
-                # Daily display counts are shown in the UI (reset at midnight or via R key).
-                # They are independent of hourly_counts used for uploads.
-                daily_counts = self.gpio_handler.get_daily_display_counts()
 
                 if not self.ui.handle_events():
                     self.running = False
@@ -74,9 +78,10 @@ class DeviceApp:
                 if self.ui.action_upload:
                     self._manual_upload()
                 if self.ui.action_reset_daily:
-                    self.gpio_handler.reset_daily_display_counts()
-                    daily_counts = self.gpio_handler.get_daily_display_counts()
-                    self._set_upload_status(now, "Tageszähler zurückgesetzt")
+                    if self._refresh_today_counts():
+                        self._set_upload_status(now, "Tageszähler aktualisiert")
+                    else:
+                        self._set_upload_status(now, "Tageszähler-Abruf fehlgeschlagen")
 
                 status_updated = self.ui.action_upload or self.ui.action_reset_daily
 
@@ -85,15 +90,19 @@ class DeviceApp:
                 # hourly sensor aggregate window.
                 live_events = self.gpio_handler.pop_live_events()
                 if live_events:
+                    self._apply_pending_live_events(live_events)
                     if latest is None:
                         self.gpio_handler.requeue_live_events(live_events)
                         self._set_upload_status(now, f"Live wartet: {len(live_events)} ohne Sensordaten")
                         status_updated = True
                     else:
+                        any_live_success = False
                         for mood in live_events:
                             success, status_msg = self.upload_service.upload_live_event(mood, latest, now)
                             self._server_connected = success
                             if success:
+                                any_live_success = True
+                                self._mark_uploaded_live_event(mood)
                                 self._set_upload_status(now, f"Live: {mood} {status_msg}")
                             else:
                                 self._set_upload_status(
@@ -101,8 +110,12 @@ class DeviceApp:
                                     f"Live fehlgeschlagen (gepuffert): {mood} {status_msg}",
                                 )
                             status_updated = True
+                        if any_live_success:
+                            self._refresh_today_counts()
 
                 retried_count, remaining_count = self.upload_service.retry_pending_uploads()
+                if retried_count:
+                    self._refresh_today_counts()
                 if (retried_count or remaining_count) and not status_updated:
                     self._set_upload_status(now, f"Retry: {retried_count} gesendet, {remaining_count} offen")
                 self._try_periodic_sensor_upload(now)
@@ -113,7 +126,13 @@ class DeviceApp:
                     self._server_connected = self.upload_service.check_server_health()
                     health_check_counter = 0
 
-                self.ui.draw(latest, daily_counts, self._server_connected, self._last_upload_status)
+                self.ui.draw(
+                    latest,
+                    self._get_display_counts(),
+                    self.today_pending_counts,
+                    self._server_connected,
+                    self._last_upload_status,
+                )
 
                 time.sleep(self.config.ui_refresh_seconds)
         except KeyboardInterrupt:
@@ -229,6 +248,65 @@ class DeviceApp:
             timestamp = moment.astimezone().strftime("%H:%M")
         self._last_upload_status = f"{timestamp} {message}"
         print(self._last_upload_status, flush=True)
+
+    def _refresh_today_counts(self) -> bool:
+        success, counts, counts_date, _ = self.upload_service.fetch_today_counts(self.config.device_id)
+        if not success or counts is None:
+            return False
+
+        previous_base = self.today_base_counts
+        previous_date = self.today_counts_date
+
+        if previous_date and counts_date and counts_date != previous_date:
+            self.today_pending_counts = MoodCounts()
+            self.today_uploaded_pending_counts = MoodCounts()
+        else:
+            self._reconcile_pending_counts(previous_base, counts)
+
+        self.today_base_counts = counts
+        self.today_counts_date = counts_date
+        return True
+
+    def _apply_pending_live_events(self, moods: list[str]) -> None:
+        for mood in moods:
+            self._increment_mood_count(self.today_pending_counts, mood)
+
+    def _reconcile_pending_counts(self, previous_base: MoodCounts, new_base: MoodCounts) -> None:
+        for mood in ("good", "neutral", "bad"):
+            self._reconcile_pending_mood(
+                mood,
+                max(0, getattr(new_base, mood) - getattr(previous_base, mood)),
+            )
+
+    def _mark_uploaded_live_event(self, mood: str) -> None:
+        self._increment_mood_count(self.today_uploaded_pending_counts, mood)
+
+    def _reconcile_pending_mood(self, mood: str, server_delta: int) -> None:
+        if server_delta <= 0:
+            return
+
+        uploaded_pending = getattr(self.today_uploaded_pending_counts, mood)
+        reconciled = min(uploaded_pending, server_delta)
+        if reconciled <= 0:
+            return
+
+        setattr(self.today_uploaded_pending_counts, mood, uploaded_pending - reconciled)
+        setattr(
+            self.today_pending_counts,
+            mood,
+            max(0, getattr(self.today_pending_counts, mood) - reconciled),
+        )
+
+    def _increment_mood_count(self, counts: MoodCounts, mood: str) -> None:
+        if hasattr(counts, mood):
+            setattr(counts, mood, getattr(counts, mood) + 1)
+
+    def _get_display_counts(self) -> MoodCounts:
+        return MoodCounts(
+            good=self.today_base_counts.good + self.today_pending_counts.good,
+            neutral=self.today_base_counts.neutral + self.today_pending_counts.neutral,
+            bad=self.today_base_counts.bad + self.today_pending_counts.bad,
+        )
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import requests
 
-from device.models import HourlyUploadPayload, SensorReading
+from device.models import HourlyUploadPayload, MoodCounts, SensorReading
 
 
 class UploadService:
@@ -50,6 +50,7 @@ class UploadService:
         server_base_url: str,
         upload_endpoint: str,
         health_endpoint: str = "/api/v1/health",
+        today_counts_endpoint: str = "/stimmungsbarometer/device_today_counts.php",
         device_token: str = "",
         retry_file: str = "device/pending_uploads.json",
         timeout_seconds: int = 10,
@@ -57,6 +58,7 @@ class UploadService:
         self.server_base_url = server_base_url.rstrip("/")
         self.upload_endpoint = upload_endpoint
         self.health_endpoint = health_endpoint
+        self.today_counts_endpoint = today_counts_endpoint
         self.timeout = timeout_seconds
         self.retry_file = Path(retry_file)
         self.retry_file.parent.mkdir(parents=True, exist_ok=True)
@@ -89,6 +91,53 @@ class UploadService:
             return False, "timeout"
         except requests.RequestException as exc:
             return False, str(exc)
+
+    def fetch_today_counts(
+        self,
+        device_id: str,
+        location_id: int | None = None,
+    ) -> tuple[bool, MoodCounts | None, str, str]:
+        """Fetch authoritative today mood counts from the read-only PHP endpoint."""
+        params = {"device_id": device_id}
+        if location_id is not None:
+            params["location_id"] = location_id
+
+        try:
+            resp = requests.get(
+                f"{self.server_base_url}{self.today_counts_endpoint}",
+                params=params,
+                headers=self.request_headers,
+                timeout=self.timeout,
+            )
+            if resp.status_code != 200:
+                return False, None, "", f"today-http-{resp.status_code}"
+
+            payload = resp.json()
+            if payload.get("status") != "ok":
+                return False, None, "", "today-invalid-status"
+
+            counts = payload.get("counts")
+            if not isinstance(counts, dict):
+                return False, None, "", "today-invalid-payload"
+
+            return (
+                True,
+                MoodCounts(
+                    good=max(0, int(counts.get("good", 0))),
+                    neutral=max(0, int(counts.get("neutral", 0))),
+                    bad=max(0, int(counts.get("bad", 0))),
+                ),
+                str(payload.get("date", "")),
+                "today-ok",
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return False, None, "", "today-invalid-json"
+        except requests.ConnectionError:
+            return False, None, "", "today-connection-error"
+        except requests.Timeout:
+            return False, None, "", "today-timeout"
+        except requests.RequestException as exc:
+            return False, None, "", str(exc)
 
     def retry_pending_uploads(self) -> tuple[int, int]:
         """Retry buffered uploads and return (sent_count, remaining_count).
