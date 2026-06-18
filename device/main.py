@@ -269,25 +269,17 @@ class DeviceApp:
 
     def _apply_pending_live_events(self, moods: list[str]) -> None:
         for mood in moods:
-            if mood == "good":
-                self.today_pending_counts.good += 1
-            elif mood == "neutral":
-                self.today_pending_counts.neutral += 1
-            elif mood == "bad":
-                self.today_pending_counts.bad += 1
+            self._increment_mood_count(self.today_pending_counts, mood)
 
     def _reconcile_pending_counts(self, previous_base: MoodCounts, new_base: MoodCounts) -> None:
-        self._reconcile_pending_mood("good", max(0, new_base.good - previous_base.good))
-        self._reconcile_pending_mood("neutral", max(0, new_base.neutral - previous_base.neutral))
-        self._reconcile_pending_mood("bad", max(0, new_base.bad - previous_base.bad))
+        for mood in ("good", "neutral", "bad"):
+            self._reconcile_pending_mood(
+                mood,
+                max(0, getattr(new_base, mood) - getattr(previous_base, mood)),
+            )
 
     def _mark_uploaded_live_event(self, mood: str) -> None:
-        if mood == "good":
-            self.today_uploaded_pending_counts.good += 1
-        elif mood == "neutral":
-            self.today_uploaded_pending_counts.neutral += 1
-        elif mood == "bad":
-            self.today_uploaded_pending_counts.bad += 1
+        self._increment_mood_count(self.today_uploaded_pending_counts, mood)
 
     def _reconcile_pending_mood(self, mood: str, server_delta: int) -> None:
         if server_delta <= 0:
@@ -304,6 +296,10 @@ class DeviceApp:
             mood,
             max(0, getattr(self.today_pending_counts, mood) - reconciled),
         )
+
+    def _increment_mood_count(self, counts: MoodCounts, mood: str) -> None:
+        if hasattr(counts, mood):
+            setattr(counts, mood, getattr(counts, mood) + 1)
 
     def _get_display_counts(self) -> MoodCounts:
         return MoodCounts(

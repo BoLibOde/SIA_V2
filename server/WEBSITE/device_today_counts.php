@@ -59,7 +59,8 @@ if ($deviceId === '' && $locationId <= 0) {
     today_counts_respond_json(400, ['error' => 'device_id or location_id is required.']);
 }
 
-$todayStart = new DateTime('today');
+$dashboardTimezone = new DateTimeZone(date_default_timezone_get());
+$todayStart = new DateTime('today', $dashboardTimezone);
 $todayEnd = (clone $todayStart)->modify('+1 day');
 $resolvedLocationId = today_counts_resolve_location_id($pdo, $locationId, (new DateTime())->format('Y-m-d H:i:s'));
 
@@ -104,7 +105,7 @@ foreach ($rows as $row) {
 today_counts_respond_json(200, [
     'status' => 'ok',
     'date' => $todayStart->format('Y-m-d'),
-    'timezone' => (string)($appConfig['timezone'] ?? date_default_timezone_get()),
+    'timezone' => $dashboardTimezone->getName(),
     'location_id' => $resolvedLocationId,
     'device_id' => $deviceId,
     'counts' => $counts,
