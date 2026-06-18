@@ -22,6 +22,17 @@ The PHP app reads/writes MariaDB tables including:
 - `sensor_hourly_aggregates`
 - `device_location_history`
 
+## Production deploy behavior (database safety)
+
+Normal GitHub Actions deploys update the website files only and **do not reset or
+rebuild** the production MariaDB database.
+
+- Live data in tables such as `locations`, `users`, `measurements`,
+  `sensor_hourly_aggregates`, and `device_location_history` must remain untouched
+  during standard deploys.
+- `scripts/refresh_database.sh` is a destructive reset helper and must only be run
+  manually for explicit bootstrap/recovery scenarios.
+
 ---
 
 ## Device ingest endpoint for Raspberry Pi (production)
