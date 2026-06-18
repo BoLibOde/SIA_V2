@@ -368,6 +368,15 @@ curl -i -X POST "http://127.0.0.1/stimmungsbarometer/device_ingest.php" \
   # expect HTTP 201 and {"status":"stored",...}
   ```
 
+- [ ] Read-only today-count endpoint reachable from Pi:
+
+  ```bash
+  curl -i \
+    -H "X-Device-Token: CHANGE_ME_DEVICE_TOKEN" \
+    "http://YOUR_HOST/stimmungsbarometer/device_today_counts.php?device_id=pi-room-01"
+  # expect HTTP 200 and JSON with status/date/timezone/location_id/device_id/counts/total
+  ```
+
 - [ ] No stuck pending uploads:
 
   ```bash

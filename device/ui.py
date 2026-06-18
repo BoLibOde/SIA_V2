@@ -78,7 +78,7 @@ class DeviceUI:
     def draw(
         self,
         reading: SensorReading | None,
-        counts: MoodCounts,
+        counts: MoodCounts | None,
         pending_counts: MoodCounts | None = None,
         server_connected: bool = False,
         last_upload_status: str = "—",
@@ -96,7 +96,9 @@ class DeviceUI:
     def close(self) -> None:
         pygame.quit()
 
-    def _pick_status(self, counts: MoodCounts) -> str:
+    def _pick_status(self, counts: MoodCounts | None) -> str:
+        if counts is None:
+            return "neutral"
         if counts.good > counts.bad and counts.good >= counts.neutral:
             return "good"
         if counts.bad > counts.good and counts.bad >= counts.neutral:
@@ -127,7 +129,7 @@ class DeviceUI:
         self.screen.blit(hum, (60, 220))
         self.screen.blit(co2, (60, 270))
 
-    def _draw_counts_card(self, counts: MoodCounts, pending_counts: MoodCounts | None = None) -> None:
+    def _draw_counts_card(self, counts: MoodCounts | None, pending_counts: MoodCounts | None = None) -> None:
         rect = pygame.Rect(40, 370, 430, 180)
         self._draw_card(rect)
 
@@ -135,9 +137,12 @@ class DeviceUI:
         self.screen.blit(title, (60, 395))
 
         pending_counts = pending_counts or MoodCounts()
-        good = self.value_font.render(f"Gut: {self._format_count(counts.good, pending_counts.good)}", True, self.ok_color)
-        neutral = self.value_font.render(f"Neutral: {self._format_count(counts.neutral, pending_counts.neutral)}", True, self.warn_color)
-        bad = self.value_font.render(f"Schlecht: {self._format_count(counts.bad, pending_counts.bad)}", True, self.err_color)
+        good_value = None if counts is None else counts.good
+        neutral_value = None if counts is None else counts.neutral
+        bad_value = None if counts is None else counts.bad
+        good = self.value_font.render(f"Gut: {self._format_count(good_value, pending_counts.good)}", True, self.ok_color)
+        neutral = self.value_font.render(f"Neutral: {self._format_count(neutral_value, pending_counts.neutral)}", True, self.warn_color)
+        bad = self.value_font.render(f"Schlecht: {self._format_count(bad_value, pending_counts.bad)}", True, self.err_color)
 
         self.screen.blit(good, (60, 445))
         self.screen.blit(neutral, (60, 490))
@@ -184,5 +189,7 @@ class DeviceUI:
         pygame.draw.rect(self.screen, self.border_color, rect, width=2, border_radius=18)
 
     @staticmethod
-    def _format_count(value: int, pending_delta: int) -> str:
+    def _format_count(value: int | None, pending_delta: int) -> str:
+        if value is None:
+            return "--"
         return f"{value}*" if pending_delta > 0 else str(value)
