@@ -166,7 +166,7 @@ SIA_V2/
 | Ebene | Technologie | Rolle |
 |-------|-------------|-------|
 | Device | Python + Pygame | Läuft auf dem Pi, UI ohne Browser |
-| Server | PHP + nginx + php-fpm | **Produktive** Web-App und Ingest-Endpunkt |
+| Server | Python + PHP + nginx + php-fpm | **Produktive** Web-App und Ingest-Endpunkt |
 | DB | MariaDB (`stimmungsbarometer`) | **Produktiver** Datenspeicher |
 | Netzwerk | Tailscale | VPN, damit der Pi den Server erreichen kann |
 | Server (alt) | FastAPI + SQLAlchemy | Alternativer/Entwicklungspfad (nicht deployt) |
