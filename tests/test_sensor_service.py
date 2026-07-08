@@ -170,7 +170,11 @@ def test_hardware_loop_falls_back_to_simulation_after_all_retries(mock_sleep) ->
 
     service._simulated_read = _stop_on_sim
 
-    with patch("device.sensor_service.SMBus", _FailSMBus):
+    _available = {f"/dev/i2c-{b}" for b in range(_I2C_DETECTION_BUSES)}
+    with (
+        patch("device.sensor_service.os.path.exists", side_effect=lambda p: p in _available),
+        patch("device.sensor_service.SMBus", _FailSMBus),
+    ):
         service._hardware_loop()
 
     expected_calls = (_INIT_RETRIES * _I2C_DETECTION_BUSES) + _I2C_DETECTION_BUSES
@@ -204,7 +208,11 @@ def test_hardware_loop_retries_after_single_init_failure(mock_sleep) -> None:
 
     service._simulated_read = _count_sim
 
-    with patch("device.sensor_service.SMBus", _FailOnceSMBus):
+    _available = {f"/dev/i2c-{b}" for b in range(_I2C_DETECTION_BUSES)}
+    with (
+        patch("device.sensor_service.os.path.exists", side_effect=lambda p: p in _available),
+        patch("device.sensor_service.SMBus", _FailOnceSMBus),
+    ):
         service._hardware_loop()
 
     assert smbus_calls == 2  # retried after the first failure
@@ -236,7 +244,11 @@ def test_hardware_loop_without_fallback_keeps_no_data_after_retries(mock_sleep) 
 
     mock_sleep.side_effect = _counted_sleep
 
-    with patch("device.sensor_service.SMBus", _FailSMBus):
+    _available = {f"/dev/i2c-{b}" for b in range(_I2C_DETECTION_BUSES)}
+    with (
+        patch("device.sensor_service.os.path.exists", side_effect=lambda p: p in _available),
+        patch("device.sensor_service.SMBus", _FailSMBus),
+    ):
         service._hardware_loop()
 
     assert smbus_calls >= _INIT_RETRIES

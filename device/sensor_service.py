@@ -1,4 +1,5 @@
 import logging
+import os
 import random
 import threading
 import time
@@ -175,7 +176,22 @@ class SensorService:
             self._simulated_active = simulated_active
 
     def _detect_scd41_bus(self, log_attempts: bool = True) -> Optional[int]:
-        for bus_id in (0, 1):
+        """Detecte welcher I2C-Bus der SCD41 Sensor angeschlossen ist.
+
+        Versucht Bus 0, 1 und 2 (Standard auf Raspberry Pi).
+        Prüft zuerst ob die Devices existieren (/dev/i2c-X) um System-Fehler zu vermeiden.
+        Sendet einen einfachen Daten-Ready-Check um zu prüfen ob der Sensor antwortet.
+        """
+        available_buses = [bus_id for bus_id in (0, 1, 2) if os.path.exists(f"/dev/i2c-{bus_id}")]
+
+        if not available_buses:
+            _LOG.error(
+                "Keine I2C-Devices gefunden (/dev/i2c-0, /dev/i2c-1, /dev/i2c-2). "
+                "Prüfe ob I2C aktiviert ist (raspi-config)."
+            )
+            return None
+
+        for bus_id in available_buses:
             attempt_log = _LOG.info if log_attempts else _LOG.debug
             attempt_log(
                 "I2C-Bus Auto-Detektion: Versuche Bus %d für SCD41 (Adresse 0x%02X)",
