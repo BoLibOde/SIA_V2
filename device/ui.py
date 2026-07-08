@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import pygame
@@ -7,6 +8,10 @@ from device.models import SensorReading
 
 # German labels for mood status displayed in the smiley card
 _MOOD_LABELS = {"good": "GUT", "neutral": "NEUTRAL", "bad": "SCHLECHT"}
+
+# Status-bar rotation: interval between steps (seconds) and total number of steps
+_STATUS_ROTATION_INTERVAL_S: float = 3.5
+_STATUS_ROTATION_STEPS: int = 3
 
 
 class DeviceUI:
@@ -35,7 +40,7 @@ class DeviceUI:
         self.title_font = pygame.font.SysFont("arial", 34, bold=True)
         self.label_font = pygame.font.SysFont("arial", 24, bold=True)
         self.value_font = pygame.font.SysFont("arial", 30)
-        self.status_font = pygame.font.SysFont("arial", 18)
+        self.status_font = pygame.font.SysFont("arial", 15)
 
         assets_dir = Path(__file__).parent / "assets"
         self.smileys = {
@@ -49,6 +54,9 @@ class DeviceUI:
         # alongside these flags (e.g. gpio_handler.pending_upload / pending_daily_reset).
         self.action_upload: bool = False
         self.action_reset_daily: bool = False
+
+        # Epoch used to drive the synchronised status-bar rotation.
+        self._rotation_epoch: float = time.monotonic()
 
     def _load_smiley(self, path: Path) -> pygame.Surface:
         image = pygame.image.load(str(path)).convert_alpha()
@@ -89,9 +97,9 @@ class DeviceUI:
         self.screen.fill(self.bg_color)
         self._draw_title()
         self._draw_sensor_card(reading)
-        self._draw_counts_card(counts, pending_counts)
+        self._draw_counts_card(counts, pending_counts, operating_mode)
         self._draw_smiley_card(status)
-        self._draw_status_bar(server_connected, last_upload_status, operating_mode)
+        self._draw_status_bar(reading, server_connected, last_upload_status, operating_mode)
         pygame.display.flip()
 
     def close(self) -> None:
@@ -130,7 +138,7 @@ class DeviceUI:
         self.screen.blit(hum, (60, 220))
         self.screen.blit(co2, (60, 270))
 
-    def _draw_counts_card(self, counts: MoodCounts | None, pending_counts: MoodCounts | None = None) -> None:
+    def _draw_counts_card(self, counts: MoodCounts | None, pending_counts: MoodCounts | None = None, operating_mode: str = "online") -> None:
         rect = pygame.Rect(40, 370, 430, 180)
         self._draw_card(rect)
 
@@ -141,9 +149,9 @@ class DeviceUI:
         good_value = None if counts is None else counts.good
         neutral_value = None if counts is None else counts.neutral
         bad_value = None if counts is None else counts.bad
-        good = self.value_font.render(f"Gut: {self._format_count(good_value, pending_counts.good)}", True, self.ok_color)
-        neutral = self.value_font.render(f"Neutral: {self._format_count(neutral_value, pending_counts.neutral)}", True, self.warn_color)
-        bad = self.value_font.render(f"Schlecht: {self._format_count(bad_value, pending_counts.bad)}", True, self.err_color)
+        good = self.value_font.render(f"Gut: {self._format_count(good_value, pending_counts.good, operating_mode)}", True, self.ok_color)
+        neutral = self.value_font.render(f"Neutral: {self._format_count(neutral_value, pending_counts.neutral, operating_mode)}", True, self.warn_color)
+        bad = self.value_font.render(f"Schlecht: {self._format_count(bad_value, pending_counts.bad, operating_mode)}", True, self.err_color)
 
         self.screen.blit(good, (60, 445))
         self.screen.blit(neutral, (60, 490))
@@ -165,41 +173,60 @@ class DeviceUI:
         label_x = 520 + (460 - label.get_width()) // 2
         self.screen.blit(label, (label_x, 420))
 
-    def _draw_status_bar(self, server_connected: bool, last_upload_status: str, operating_mode: str = "online") -> None:
+    def _draw_status_bar(self, reading: SensorReading | None, server_connected: bool, last_upload_status: str, operating_mode: str = "online") -> None:
         bar_y = self.height - 34
         pygame.draw.rect(self.screen, self.border_color, pygame.Rect(0, bar_y, self.width, 34))
 
+        # Determine current rotation step (0, 1, or 2) from elapsed time
+        elapsed = time.monotonic() - self._rotation_epoch
+        step = int(elapsed / _STATUS_ROTATION_INTERVAL_S) % _STATUS_ROTATION_STEPS
+
+        # --- Left-side info panels ---
         if operating_mode == "offline":
             mode_text = "Modus: Offline (Lokal)"
             mode_color = self.warn_color
-            parts = [
-                (f"Gerät: {self.device_id}", self.subtle_color),
-                (mode_text, mode_color),
-                ("[ESC] Beenden", self.subtle_color),
-            ]
         else:
-            conn_color = self.ok_color if server_connected else self.err_color
-            server_status = "verbunden" if server_connected else "offline (lokal gepuffert)"
-            mode_text = f"Modus: Online | Server: {server_status}"
-            parts = [
-                (f"Gerät: {self.device_id}", self.subtle_color),
-                (mode_text, conn_color),
-                (f"Letzter Upload: {last_upload_status}", self.subtle_color),
-                ("[U] Upload  [R] Aktualisieren  [ESC] Beenden", self.subtle_color),
-            ]
+            mode_text = f"Modus: Online | Server: {'verbunden' if server_connected else 'offline (lokal gepuffert)'}"
+            mode_color = self.ok_color if server_connected else self.err_color
 
-        x = 16
-        for text, color in parts:
-            surf = self.status_font.render(text, True, color)
-            self.screen.blit(surf, (x, bar_y + 8))
-            x += surf.get_width() + 40
+        if reading is None:
+            sensor_text = "Sensoren: ⚠ Fehler"
+            sensor_color = self.err_color
+        else:
+            sensor_text = f"Sensoren: OK | CO2: {reading.co2_ppm} ppm"
+            sensor_color = self.ok_color
+
+        left_panels = [
+            (mode_text, mode_color),
+            (sensor_text, sensor_color),
+            (f"Letzter Upload: {last_upload_status}", self.subtle_color),
+        ]
+
+        # --- Right-side keyboard-hint panels (synchronised with left) ---
+        right_panels = [
+            ("[U] Upload  [R] Reset", self.subtle_color),
+            ("[ESC] Beenden", self.subtle_color),
+            ("[U] Upload  [R] Reset", self.subtle_color),
+        ]
+
+        left_text, left_color = left_panels[step]
+        right_text, right_color = right_panels[step]
+
+        left_surf = self.status_font.render(left_text, True, left_color)
+        right_surf = self.status_font.render(right_text, True, right_color)
+
+        text_y = bar_y + (34 - left_surf.get_height()) // 2
+        self.screen.blit(left_surf, (16, text_y))
+        self.screen.blit(right_surf, (self.width - right_surf.get_width() - 16, text_y))
 
     def _draw_card(self, rect: pygame.Rect) -> None:
         pygame.draw.rect(self.screen, self.card_color, rect, border_radius=18)
         pygame.draw.rect(self.screen, self.border_color, rect, width=2, border_radius=18)
 
     @staticmethod
-    def _format_count(value: int | None, pending_delta: int) -> str:
+    def _format_count(value: int | None, pending_delta: int, operating_mode: str = "online") -> str:
         if value is None:
             return "--"
-        return f"{value}*" if pending_delta > 0 else str(value)
+        if pending_delta > 0 and operating_mode != "offline":
+            return f"{value}*"
+        return str(value)
