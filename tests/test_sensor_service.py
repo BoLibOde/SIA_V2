@@ -6,10 +6,12 @@ Tests cover:
 - _read_measurement: CRC validation and plausibility checks
 - SensorService._hardware_loop: init retries, optional simulation fallback, session restart, recovery
 """
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from device.models import SensorReading
 from device.sensor_service import (
     _CO2_MAX_PPM,
     _CO2_MIN_PPM,
@@ -140,6 +142,8 @@ def test_read_measurement_rejects_temperature_too_high() -> None:
 # SensorService._hardware_loop
 # ---------------------------------------------------------------------------
 
+_I2C_DETECTION_BUSES = 2
+
 @patch("device.sensor_service.time.sleep")
 def test_hardware_loop_falls_back_to_simulation_after_all_retries(mock_sleep) -> None:
     """After _INIT_RETRIES consecutive SMBus failures the service falls back to simulation."""
@@ -169,7 +173,8 @@ def test_hardware_loop_falls_back_to_simulation_after_all_retries(mock_sleep) ->
     with patch("device.sensor_service.SMBus", _FailSMBus):
         service._hardware_loop()
 
-    assert smbus_calls >= _INIT_RETRIES
+    expected_calls = (_INIT_RETRIES * _I2C_DETECTION_BUSES) + _I2C_DETECTION_BUSES
+    assert smbus_calls == expected_calls
     assert service.get_latest_reading() is not None  # simulation produced a reading
 
 
@@ -266,7 +271,10 @@ def test_hardware_loop_restarts_session_on_repeated_read_errors(mock_sleep) -> N
         def __exit__(self, *args):
             return False
 
-    with patch.object(service, "_detect_scd41_bus", return_value=1), patch("device.sensor_service.SMBus", _SessionCountingSMBus):
+    with (
+        patch.object(service, "_detect_scd41_bus", return_value=1),
+        patch("device.sensor_service.SMBus", _SessionCountingSMBus),
+    ):
         service._hardware_loop()
 
     assert session_count == 2  # session was restarted once after read errors
@@ -322,11 +330,7 @@ def test_status_text_reports_error_without_data_and_ok_with_data() -> None:
     assert service.get_status_text() == "OK"
 
 
-def _measurement_to_reading(co2: int, temp_c: float, humidity_pct: float):
-    from datetime import UTC, datetime
-
-    from device.models import SensorReading
-
+def _measurement_to_reading(co2: int, temp_c: float, humidity_pct: float) -> SensorReading:
     return SensorReading(
         temperature_c=temp_c,
         humidity_pct=humidity_pct,

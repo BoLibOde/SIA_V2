@@ -425,12 +425,7 @@ if __name__ == "__main__":
         neutral_pin=_config.neutral_button_pin,
         bad_pin=_config.bad_button_pin,
     )
-    _selection = _menu.run()
-    if isinstance(_selection, tuple):
-        _mode, _enable_simulation_fallback = _selection
-    else:
-        _mode = _selection
-        _enable_simulation_fallback = _config.enable_simulation_fallback
+    _mode, _enable_simulation_fallback = _menu.run()
     app = DeviceApp(
         operating_mode=_mode,
         enable_simulation_fallback=_enable_simulation_fallback,

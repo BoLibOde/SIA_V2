@@ -237,7 +237,11 @@ class StartupMenu:
 
     def _draw_simulation_title(self, screen: pygame.Surface, title_font, hint_font) -> None:
         title = title_font.render("Simulation auswählen", True, _TEXT)
-        subtitle = hint_font.render("Soll bei Sensor-Ausfall auf Simulation gewechselt werden?", True, _SUBTLE)
+        subtitle = hint_font.render(
+            "Soll bei Sensor-Ausfall auf Simulation umgestellt werden?",
+            True,
+            _SUBTLE,
+        )
         cx = self.width // 2
         screen.blit(title, (cx - title.get_width() // 2, 70))
         screen.blit(subtitle, (cx - subtitle.get_width() // 2, 125))
@@ -267,7 +271,7 @@ class StartupMenu:
 
     def _draw_simulation_key_hints(self, screen: pygame.Surface, hint_font) -> None:
         hint = hint_font.render(
-            "Tastatur: [E] Echte Sensoren  [M/S] Mit Simulation  [ESC] Zurück zum Modus-Menü",
+            "Tastatur: [E] Echte Sensoren  [M/S] Mit Simulation  [ESC] zurück zum Modus-Menü",
             True,
             _SUBTLE,
         )

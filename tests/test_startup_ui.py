@@ -2,6 +2,8 @@ import importlib
 import sys
 import types
 
+_CHAR_WIDTH_PX = 8
+
 
 def _load_startup_ui_with_fake_pygame(event_batches):
     class _FakeText:
@@ -9,7 +11,7 @@ def _load_startup_ui_with_fake_pygame(event_batches):
             self._text = text
 
         def get_width(self) -> int:
-            return max(1, len(self._text) * 8)
+            return max(1, len(self._text) * _CHAR_WIDTH_PX)
 
         def get_height(self) -> int:
             return 18
