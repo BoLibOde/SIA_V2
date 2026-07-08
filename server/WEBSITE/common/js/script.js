@@ -42,15 +42,17 @@ if (typeof moodChartData !== 'undefined' && moodCanvas) {
 
 if (
     typeof temperatureChartData !== 'undefined' &&
-    temperatureChartData.tag &&
+    typeof dashboardConfig !== 'undefined' &&
+    temperatureChartData[dashboardConfig.range] &&
     temperatureCanvas
 ) {
+    const initialRangeData = temperatureChartData[dashboardConfig.range];
     tempChart = new Chart(temperatureCanvas, {
         type: 'line',
         data: {
-            labels: Array.isArray(temperatureChartData.tag.labels) ? temperatureChartData.tag.labels : [],
+            labels: Array.isArray(initialRangeData.labels) ? initialRangeData.labels : [],
             datasets: [{
-                data: Array.isArray(temperatureChartData.tag.values) ? temperatureChartData.tag.values : [],
+                data: Array.isArray(initialRangeData.values) ? initialRangeData.values : [],
                 borderColor: '#ff4d4d',
                 backgroundColor: 'rgba(255, 77, 77, 0.2)',
                 tension: 0.4,
@@ -72,11 +74,10 @@ const timeButtons = document.querySelectorAll('.time-box');
 
 timeButtons.forEach(button => {
     button.addEventListener('click', () => {
-        timeButtons.forEach(btn => btn.classList.remove('active'));
-        button.classList.add('active');
-
         const selectedRange = button.dataset.range;
-        updateTemperatureChart(selectedRange);
+        const params = new URLSearchParams(window.location.search);
+        params.set('range', selectedRange);
+        window.location.href = '?' + params.toString();
     });
 });
 
@@ -93,7 +94,8 @@ function updateTemperatureChart(timeRange) {
 }
 
 function formatMetricValue(value, decimals) {
-    return Number(value || 0).toFixed(decimals).replace(/\.?0+$/, '');
+    const num = Number(value);
+    return (isNaN(num) ? 0 : num).toFixed(decimals).replace(/\.?0+$/, '');
 }
 
 function applyDashboardData(dashboardData) {
@@ -137,13 +139,16 @@ async function refreshDashboardData() {
     if (isDashboardRefreshRunning) return;
 
     isDashboardRefreshRunning = true;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     try {
         const url = `${dashboardConfig.dataUrl}?location_id=${encodeURIComponent(dashboardConfig.locationId)}&range=${encodeURIComponent(dashboardConfig.range)}`;
         const response = await fetch(url, {
             headers: {
                 'X-Requested-With': 'XMLHttpRequest'
-            }
+            },
+            signal: controller.signal
         });
 
         if (!response.ok) {
@@ -154,8 +159,13 @@ async function refreshDashboardData() {
         const dashboardData = await response.json();
         applyDashboardData(dashboardData);
     } catch (error) {
-        console.error('Dashboard refresh failed', error);
+        if (error.name === 'AbortError') {
+            console.error('Dashboard refresh timed out');
+        } else {
+            console.error('Dashboard refresh failed', error);
+        }
     } finally {
+        clearTimeout(timeoutId);
         isDashboardRefreshRunning = false;
     }
 }
