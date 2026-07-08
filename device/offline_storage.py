@@ -94,11 +94,15 @@ class OfflineStorage:
             return None
         try:
             return json.loads(self.data_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except json.JSONDecodeError as exc:
+            print(f"[OfflineStorage] Corrupted JSON in {self.data_file}: {exc}", flush=True)
+            return None
+        except OSError as exc:
+            print(f"[OfflineStorage] Cannot read {self.data_file}: {exc}", flush=True)
             return None
 
     def _write(self, data: dict) -> None:
         try:
             self.data_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        except OSError:
-            pass
+        except OSError as exc:
+            print(f"[OfflineStorage] Cannot write {self.data_file}: {exc}", flush=True)

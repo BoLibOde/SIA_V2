@@ -73,8 +73,10 @@ class StartupMenu:
                 "bad": GPIO.input(bad_pin),
             }
             self._gpio = GPIO
-        except (ImportError, RuntimeError):
-            pass
+        except ImportError:
+            pass  # No RPi.GPIO installed (development machine)
+        except RuntimeError as exc:
+            print(f"[StartupMenu] GPIO not available (permission/hardware error): {exc}", flush=True)
 
     # ------------------------------------------------------------------
     # Public interface
@@ -99,8 +101,10 @@ class StartupMenu:
             # ── keyboard / window events ──────────────────────────────
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    # Window close button – stay in menu (do nothing)
-                    pass
+                    # Window close button exits the application –
+                    # a mode *must* be chosen to proceed.
+                    pygame.quit()
+                    raise SystemExit(0)
                 elif event.type == pygame.KEYDOWN:
                     if event.key in (pygame.K_o, pygame.K_RETURN):
                         return "online"

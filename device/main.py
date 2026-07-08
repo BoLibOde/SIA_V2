@@ -331,11 +331,15 @@ class DeviceApp:
     def _refresh_today_counts(self) -> bool:
         success, counts, counts_date, _ = self.upload_service.fetch_today_counts(self.config.device_id)
         if not success or counts is None:
-            # Server unavailable – fall back to locally cached counts
-            local = self.offline_storage.load_daily_counts()
-            if self.today_base_counts is None and local.total() > 0:
-                self.today_base_counts = local
-                self.today_counts_date = datetime.now().date().isoformat()
+            # Server unavailable – use locally cached counts only when we have
+            # no server baseline yet (first start with no connectivity).  If we
+            # already have server data in memory we keep it as-is, because the
+            # server counts are always more authoritative than the local cache.
+            if self.today_base_counts is None:
+                local = self.offline_storage.load_daily_counts()
+                if local.total() > 0:
+                    self.today_base_counts = local
+                    self.today_counts_date = datetime.now().date().isoformat()
             return False
 
         previous_base = self.today_base_counts
