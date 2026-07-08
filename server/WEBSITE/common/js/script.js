@@ -150,6 +150,7 @@ async function refreshDashboardData() {
             },
             signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             console.error('Dashboard refresh failed with status', response.status);
@@ -159,13 +160,13 @@ async function refreshDashboardData() {
         const dashboardData = await response.json();
         applyDashboardData(dashboardData);
     } catch (error) {
+        clearTimeout(timeoutId);
         if (error.name === 'AbortError') {
             console.error('Dashboard refresh timed out');
         } else {
             console.error('Dashboard refresh failed', error);
         }
     } finally {
-        clearTimeout(timeoutId);
         isDashboardRefreshRunning = false;
     }
 }

@@ -142,7 +142,7 @@ $co2BarWidth = $dashboardData['summary']['co2BarWidth'];
 <script>
     const moodChartData = <?= json_encode($moodData, JSON_UNESCAPED_UNICODE) ?>;
     const temperatureChartData = {
-        <?= json_encode($selectedRange, JSON_UNESCAPED_UNICODE) ?>: <?= json_encode($temperatureData, JSON_UNESCAPED_UNICODE) ?>
+        <?= $selectedRange ?>: <?= json_encode($temperatureData, JSON_UNESCAPED_UNICODE) ?>
     };
     const dashboardConfig = {
         locationId: <?= (int)$selectedLocationId ?>,
