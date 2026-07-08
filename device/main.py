@@ -16,13 +16,23 @@ _HEALTH_CHECK_MAX_S: float = 60.0
 
 
 class DeviceApp:
-    def __init__(self, operating_mode: str = "online") -> None:
+    def __init__(
+        self,
+        operating_mode: str = "online",
+        enable_simulation_fallback: bool | None = None,
+    ) -> None:
         self.config = DeviceConfig()
         # operating_mode from the startup menu takes priority; fall back to config value.
         self.operating_mode: str = operating_mode if operating_mode in ("online", "offline") else self.config.operating_mode
+        self.enable_simulation_fallback = (
+            self.config.enable_simulation_fallback
+            if enable_simulation_fallback is None
+            else enable_simulation_fallback
+        )
         self.sensor_service = SensorService(
             read_interval_seconds=self.config.sensor_interval_seconds,
             simulation_mode=self.config.simulation_mode,
+            enable_simulation_fallback=self.enable_simulation_fallback,
         )
         self.gpio_handler = GpioHandler(
             good_pin=self.config.good_button_pin,
@@ -101,6 +111,9 @@ class DeviceApp:
                     self._server_connected,
                     self._last_upload_status,
                     self.operating_mode,
+                    self.sensor_service.get_status_text(),
+                    self.sensor_service.has_data(),
+                    self.sensor_service.is_hardware_active(),
                 )
 
                 time.sleep(self.config.ui_refresh_seconds)
@@ -412,6 +425,9 @@ if __name__ == "__main__":
         neutral_pin=_config.neutral_button_pin,
         bad_pin=_config.bad_button_pin,
     )
-    _mode = _menu.run()
-    app = DeviceApp(operating_mode=_mode)
+    _mode, _enable_simulation_fallback = _menu.run()
+    app = DeviceApp(
+        operating_mode=_mode,
+        enable_simulation_fallback=_enable_simulation_fallback,
+    )
     app.run()

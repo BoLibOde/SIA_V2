@@ -35,6 +35,11 @@ class DeviceConfig:
 
     # When True, the sensor service uses simulated values (no real hardware needed)
     simulation_mode: bool = field(default_factory=lambda: _env_bool("SIA_SIMULATION", False))
+    # When True, switch to simulation if hardware init fails repeatedly.
+    # This is primarily set by the startup menu for interactive runs.
+    enable_simulation_fallback: bool = field(
+        default_factory=lambda: _env_bool("SIA_ENABLE_SIMULATION_FALLBACK", False)
+    )
 
     # Path for storing failed uploads that will be retried
     retry_file_path: str = field(default_factory=lambda: os.getenv("SIA_RETRY_FILE", "device/pending_uploads.json"))

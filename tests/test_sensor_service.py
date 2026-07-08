@@ -4,12 +4,14 @@ Tests cover:
 - CRC calculation
 - _is_data_ready: CRC validation of data-ready response
 - _read_measurement: CRC validation and plausibility checks
-- SensorService._hardware_loop: init retries, simulation fallback, session restart
+- SensorService._hardware_loop: init retries, optional simulation fallback, session restart, recovery
 """
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from device.models import SensorReading
 from device.sensor_service import (
     _CO2_MAX_PPM,
     _CO2_MIN_PPM,
@@ -140,10 +142,16 @@ def test_read_measurement_rejects_temperature_too_high() -> None:
 # SensorService._hardware_loop
 # ---------------------------------------------------------------------------
 
+_I2C_DETECTION_BUSES = 2
+
 @patch("device.sensor_service.time.sleep")
 def test_hardware_loop_falls_back_to_simulation_after_all_retries(mock_sleep) -> None:
     """After _INIT_RETRIES consecutive SMBus failures the service falls back to simulation."""
-    service = SensorService(read_interval_seconds=1, simulation_mode=False)
+    service = SensorService(
+        read_interval_seconds=1,
+        simulation_mode=False,
+        enable_simulation_fallback=True,
+    )
     service.running = True
     smbus_calls = 0
 
@@ -165,7 +173,8 @@ def test_hardware_loop_falls_back_to_simulation_after_all_retries(mock_sleep) ->
     with patch("device.sensor_service.SMBus", _FailSMBus):
         service._hardware_loop()
 
-    assert smbus_calls == _INIT_RETRIES
+    expected_calls = (_INIT_RETRIES * _I2C_DETECTION_BUSES) + _I2C_DETECTION_BUSES
+    assert smbus_calls == expected_calls
     assert service.get_latest_reading() is not None  # simulation produced a reading
 
 
@@ -203,6 +212,40 @@ def test_hardware_loop_retries_after_single_init_failure(mock_sleep) -> None:
 
 
 @patch("device.sensor_service.time.sleep")
+def test_hardware_loop_without_fallback_keeps_no_data_after_retries(mock_sleep) -> None:
+    service = SensorService(
+        read_interval_seconds=1,
+        simulation_mode=False,
+        enable_simulation_fallback=False,
+    )
+    service.running = True
+    smbus_calls = 0
+    sleep_calls = 0
+
+    class _FailSMBus:
+        def __init__(self, bus_id: int) -> None:
+            nonlocal smbus_calls
+            smbus_calls += 1
+            raise OSError("I2C not accessible")
+
+    def _counted_sleep(_seconds: float) -> None:
+        nonlocal sleep_calls
+        sleep_calls += 1
+        if sleep_calls >= _INIT_RETRIES + 2:
+            service.running = False
+
+    mock_sleep.side_effect = _counted_sleep
+
+    with patch("device.sensor_service.SMBus", _FailSMBus):
+        service._hardware_loop()
+
+    assert smbus_calls >= _INIT_RETRIES
+    assert service.get_latest_reading() is None
+    assert service.has_data() is False
+    assert service.is_simulated() is False
+
+
+@patch("device.sensor_service.time.sleep")
 def test_hardware_loop_restarts_session_on_repeated_read_errors(mock_sleep) -> None:
     """After _MAX_READ_ERRORS consecutive read errors the hardware session is restarted."""
     service = SensorService(read_interval_seconds=1, simulation_mode=False)
@@ -228,8 +271,69 @@ def test_hardware_loop_restarts_session_on_repeated_read_errors(mock_sleep) -> N
         def __exit__(self, *args):
             return False
 
-    with patch("device.sensor_service.SMBus", _SessionCountingSMBus):
+    with (
+        patch.object(service, "_detect_scd41_bus", return_value=1),
+        patch("device.sensor_service.SMBus", _SessionCountingSMBus),
+    ):
         service._hardware_loop()
 
     assert session_count == 2  # session was restarted once after read errors
     assert failing_bus.read_i2c_block_data.call_count == _MAX_READ_ERRORS
+
+
+@patch("device.sensor_service.time.sleep")
+def test_hardware_loop_can_recover_from_simulation_to_hardware(mock_sleep) -> None:
+    service = SensorService(
+        read_interval_seconds=1,
+        simulation_mode=False,
+        enable_simulation_fallback=True,
+    )
+    service.running = True
+    bus = MagicMock()
+
+    class _OkSMBus:
+        def __init__(self, bus_id: int) -> None:
+            pass
+
+        def __enter__(self):
+            return bus
+
+        def __exit__(self, *args):
+            return False
+
+    detect_sequence = [None] * _INIT_RETRIES + [1]
+
+    def _fake_data_ready(_bus, _addr):
+        service.running = False
+        return True
+
+    with (
+        patch.object(service, "_detect_scd41_bus", side_effect=detect_sequence),
+        patch.object(service, "_run_simulation_with_recovery", return_value=True),
+        patch("device.sensor_service.SMBus", _OkSMBus),
+        patch("device.sensor_service._is_data_ready", side_effect=_fake_data_ready),
+        patch("device.sensor_service._read_measurement", return_value=(615, 21.5, 41.0)),
+    ):
+        service._hardware_loop()
+
+    assert service.has_data() is True
+    assert service.get_latest_reading() is not None
+    assert service.is_hardware_active() is True
+
+
+def test_status_text_reports_error_without_data_and_ok_with_data() -> None:
+    service = SensorService(read_interval_seconds=1, simulation_mode=True)
+    assert service.get_status_text() == "FEHLER"
+
+    service._append_reading(_measurement_to_reading(615, 21.5, 41.0))
+    assert service.has_data() is True
+    assert service.get_status_text() == "OK"
+
+
+def _measurement_to_reading(co2: int, temp_c: float, humidity_pct: float) -> SensorReading:
+    return SensorReading(
+        temperature_c=temp_c,
+        humidity_pct=humidity_pct,
+        co2_ppm=co2,
+        timestamp=datetime.now(UTC),
+    )

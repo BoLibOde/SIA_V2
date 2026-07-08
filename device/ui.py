@@ -91,6 +91,9 @@ class DeviceUI:
         server_connected: bool = False,
         last_upload_status: str = "—",
         operating_mode: str = "online",
+        sensor_status_text: str = "FEHLER",
+        sensor_has_data: bool = False,
+        sensor_hardware_active: bool = False,
     ) -> None:
         status = self._pick_status(counts)
 
@@ -99,7 +102,15 @@ class DeviceUI:
         self._draw_sensor_card(reading)
         self._draw_counts_card(counts, pending_counts, operating_mode)
         self._draw_smiley_card(status)
-        self._draw_status_bar(reading, server_connected, last_upload_status, operating_mode)
+        self._draw_status_bar(
+            reading,
+            server_connected,
+            last_upload_status,
+            operating_mode,
+            sensor_status_text,
+            sensor_has_data,
+            sensor_hardware_active,
+        )
         pygame.display.flip()
 
     def close(self) -> None:
@@ -173,7 +184,16 @@ class DeviceUI:
         label_x = 520 + (460 - label.get_width()) // 2
         self.screen.blit(label, (label_x, 420))
 
-    def _draw_status_bar(self, reading: SensorReading | None, server_connected: bool, last_upload_status: str, operating_mode: str = "online") -> None:
+    def _draw_status_bar(
+        self,
+        reading: SensorReading | None,
+        server_connected: bool,
+        last_upload_status: str,
+        operating_mode: str = "online",
+        sensor_status_text: str = "FEHLER",
+        sensor_has_data: bool = False,
+        sensor_hardware_active: bool = False,
+    ) -> None:
         bar_y = self.height - 34
         pygame.draw.rect(self.screen, self.border_color, pygame.Rect(0, bar_y, self.width, 34))
 
@@ -189,7 +209,7 @@ class DeviceUI:
             mode_text = f"Modus: Online | Server: {'verbunden' if server_connected else 'offline (lokal gepuffert)'}"
             mode_color = self.ok_color if server_connected else self.err_color
 
-        if reading is None:
+        if sensor_status_text != "OK" or not sensor_has_data or reading is None:
             sensor_text = "Sensoren: ⚠ Fehler"
             sensor_color = self.err_color
         else:

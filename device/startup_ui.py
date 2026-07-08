@@ -1,18 +1,13 @@
-"""Pygame-based boot screen shown before the main app starts.
+"""Pygame-based startup menu shown before the main app starts.
 
-The user selects between **Online-Modus** and **Offline-Modus** using:
+Two selections are required:
+1) operating mode: online/offline
+2) sensor strategy: real sensors or simulation fallback on hardware failure
 
-* The mood-input buttons (if GPIO is available):
-    - **GUT-Taste**         → Online-Modus
-    - **NEUTRAL- / SCHLECHT-Taste** → Offline-Modus
-* Keyboard fallback:
-    - **O** or **Enter**    → Online-Modus
-    - **F**                 → Offline-Modus
-    - **ESC** / window close → stay in menu (keep choosing)
-
-``run()`` blocks until the user makes a selection and returns ``"online"`` or
-``"offline"``.  After returning, pygame is still initialised so that
-``DeviceUI.__init__`` can call ``pygame.display.set_mode()`` without re-init.
+``run()`` blocks until the user makes both selections and returns
+``("online"|"offline", enable_simulation_fallback: bool)``. After returning,
+pygame is still initialised so that ``DeviceUI.__init__`` can call
+``pygame.display.set_mode()`` without re-init.
 """
 
 import pygame
@@ -82,8 +77,8 @@ class StartupMenu:
     # Public interface
     # ------------------------------------------------------------------
 
-    def run(self) -> str:
-        """Show the menu until the user picks a mode.  Returns ``'online'`` or ``'offline'``."""
+    def run(self) -> tuple[str, bool]:
+        """Show both startup menus and return ``(operating_mode, enable_simulation_fallback)``."""
         pygame.init()
         pygame.font.init()
 
@@ -97,6 +92,24 @@ class StartupMenu:
 
         clock = pygame.time.Clock()
 
+        while True:
+            mode = self._run_mode_menu(screen, clock, title_font, option_font, hint_font)
+            enable_simulation_fallback = self._run_simulation_menu(
+                screen,
+                clock,
+                title_font,
+                option_font,
+                hint_font,
+            )
+            if enable_simulation_fallback is None:
+                continue
+            return mode, enable_simulation_fallback
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _run_mode_menu(self, screen, clock, title_font, option_font, hint_font) -> str:
         while True:
             # ── keyboard / window events ──────────────────────────────
             for event in pygame.event.get():
@@ -113,24 +126,45 @@ class StartupMenu:
                     # ESC → stay in menu (requirement: "Menü wiederholen")
 
             # ── GPIO button polling ───────────────────────────────────
-            gpio_result = self._poll_gpio()
+            gpio_result = self._poll_gpio("mode")
             if gpio_result is not None:
                 return gpio_result
 
             # ── rendering ─────────────────────────────────────────────
             screen.fill(_BG)
-            self._draw_title(screen, title_font, hint_font)
-            self._draw_options(screen, option_font, hint_font)
-            self._draw_key_hints(screen, hint_font)
+            self._draw_mode_title(screen, title_font, hint_font)
+            self._draw_mode_options(screen, option_font, hint_font)
+            self._draw_mode_key_hints(screen, hint_font)
             pygame.display.flip()
             clock.tick(30)
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
+    def _run_simulation_menu(self, screen, clock, title_font, option_font, hint_font) -> bool | None:
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    raise SystemExit(0)
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_e, pygame.K_RETURN):
+                        return False
+                    elif event.key in (pygame.K_s, pygame.K_m):
+                        return True
+                    elif event.key == pygame.K_ESCAPE:
+                        return None
 
-    def _poll_gpio(self) -> str | None:
-        """Return ``'online'`` / ``'offline'`` on a button press, else ``None``."""
+            gpio_result = self._poll_gpio("simulation")
+            if gpio_result is not None:
+                return gpio_result
+
+            screen.fill(_BG)
+            self._draw_simulation_title(screen, title_font, hint_font)
+            self._draw_simulation_options(screen, option_font, hint_font)
+            self._draw_simulation_key_hints(screen, hint_font)
+            pygame.display.flip()
+            clock.tick(30)
+
+    def _poll_gpio(self, menu: str) -> str | bool | None:
+        """Poll mood buttons and map to mode/simulation selection for the active menu."""
         if self._gpio is None:
             return None
         GPIO = self._gpio
@@ -144,17 +178,19 @@ class StartupMenu:
             prev = self._prev_gpio.get(mood, GPIO.HIGH)
             self._prev_gpio[mood] = current
             if prev == GPIO.HIGH and current == GPIO.LOW:
-                return "online" if mood == "good" else "offline"
+                if menu == "mode":
+                    return "online" if mood == "good" else "offline"
+                return False if mood == "good" else True
         return None
 
-    def _draw_title(self, screen: pygame.Surface, title_font, hint_font) -> None:
+    def _draw_mode_title(self, screen: pygame.Surface, title_font, hint_font) -> None:
         title = title_font.render("SIA Stimmungs-bar-o-meter", True, _TEXT)
         subtitle = hint_font.render("Bitte Betriebsmodus wählen:", True, _SUBTLE)
         cx = self.width // 2
         screen.blit(title, (cx - title.get_width() // 2, 70))
         screen.blit(subtitle, (cx - subtitle.get_width() // 2, 125))
 
-    def _draw_options(self, screen: pygame.Surface, option_font, hint_font) -> None:
+    def _draw_mode_options(self, screen: pygame.Surface, option_font, hint_font) -> None:
         cx = self.width // 2
         card_w, card_h = 280, 130
         gap = 40
@@ -191,9 +227,51 @@ class StartupMenu:
             s = hint_font.render(text, True, color)
             screen.blit(s, (x - s.get_width() // 2, desc_y))
 
-    def _draw_key_hints(self, screen: pygame.Surface, hint_font) -> None:
+    def _draw_mode_key_hints(self, screen: pygame.Surface, hint_font) -> None:
         hint = hint_font.render(
             "Tastatur:  [O] Online   [F] Offline   [ESC] Menü wiederholen",
+            True,
+            _SUBTLE,
+        )
+        screen.blit(hint, (self.width // 2 - hint.get_width() // 2, self.height - 50))
+
+    def _draw_simulation_title(self, screen: pygame.Surface, title_font, hint_font) -> None:
+        title = title_font.render("Simulation auswählen", True, _TEXT)
+        subtitle = hint_font.render(
+            "Soll bei Sensor-Ausfall auf Simulation umgestellt werden?",
+            True,
+            _SUBTLE,
+        )
+        cx = self.width // 2
+        screen.blit(title, (cx - title.get_width() // 2, 70))
+        screen.blit(subtitle, (cx - subtitle.get_width() // 2, 125))
+
+    def _draw_simulation_options(self, screen: pygame.Surface, option_font, hint_font) -> None:
+        cx = self.width // 2
+        card_w, card_h = 320, 130
+        gap = 40
+
+        real_rect = pygame.Rect(cx - card_w - gap // 2, 185, card_w, card_h)
+        pygame.draw.rect(screen, _CARD, real_rect, border_radius=18)
+        pygame.draw.rect(screen, _HIGHLIGHT, real_rect, width=3, border_radius=18)
+
+        rt = option_font.render("Echte Sensoren", True, _TEXT)
+        screen.blit(rt, (real_rect.centerx - rt.get_width() // 2, real_rect.y + 28))
+        rb = hint_font.render("[ GUT-Taste / E / Enter ]", True, _OK)
+        screen.blit(rb, (real_rect.centerx - rb.get_width() // 2, real_rect.y + 82))
+
+        sim_rect = pygame.Rect(cx + gap // 2, 185, card_w, card_h)
+        pygame.draw.rect(screen, _CARD, sim_rect, border_radius=18)
+        pygame.draw.rect(screen, _BORDER, sim_rect, width=3, border_radius=18)
+
+        st = option_font.render("Mit Simulation", True, _TEXT)
+        screen.blit(st, (sim_rect.centerx - st.get_width() // 2, sim_rect.y + 28))
+        sb = hint_font.render("[ NEUTRAL / SCHLECHT / M ]", True, _WARN)
+        screen.blit(sb, (sim_rect.centerx - sb.get_width() // 2, sim_rect.y + 82))
+
+    def _draw_simulation_key_hints(self, screen: pygame.Surface, hint_font) -> None:
+        hint = hint_font.render(
+            "Tastatur: [E] Echte Sensoren  [M/S] Mit Simulation  [ESC] zurück zum Modus-Menü",
             True,
             _SUBTLE,
         )
