@@ -170,7 +170,7 @@ cd ~/Desktop/SIA_V2
 Nur manueller Neustart (kein Update):
 
 ```bash
-./restart_ui.sh
+./restart
 pgrep -af "python -m device.main"
 ```
 

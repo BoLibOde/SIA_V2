@@ -51,7 +51,7 @@ echo "[4/4] Restarting UI..."
 # never successfully sent will be lost, but this is the safe default:
 # fresh update = clean upload state.
 rm -f "$APP_DIR/device/pending_uploads.json"
-"$APP_DIR/restart_ui.sh"
+"$APP_DIR/restart"
 
 echo ""
 echo "Update complete."
