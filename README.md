@@ -179,6 +179,45 @@ cp .env.device.example .env.device
 ./start_ui.sh
 ```
 
+---
+
+## Startup-Menü – Online / Offline Modus
+
+Beim Programmstart erscheint vor der Haupt-App ein **Auswahlmenü**, mit dem der Betriebsmodus für die aktuelle Sitzung gewählt wird.
+
+### 3 Betriebszustände
+
+| Zustand | Anzeige | Server |
+|---|---|---|
+| **Online mit Server** | `Modus: Online \| Server: verbunden` | ✅ Verbunden |
+| **Online ohne Server** | `Modus: Online \| Server: offline (lokal gepuffert)` | Retry-Buffer aktiv |
+| **Offline-Modus** | `Modus: Offline (Lokal)` | ⛔ Kein Server |
+
+### Button-Belegung im Startup-Menü
+
+| Taste / Button | Aktion |
+|---|---|
+| **GUT-Button** | Online-Modus wählen |
+| **NEUTRAL-Button** | Offline-Modus wählen |
+| **SCHLECHT-Button** | Offline-Modus wählen |
+| Tastatur **O** oder **Enter** | Online-Modus wählen |
+| Tastatur **F** | Offline-Modus wählen |
+| Tastatur **ESC** | Im Menü bleiben (wiederholen) |
+
+### Offline-Betrieb (z. B. Messe)
+
+Im Offline-Modus werden Stimmungszähler des aktuellen Tages lokal in `device/tagesgesamt.json` gespeichert.
+Bei Mitternacht werden die Zähler automatisch zurückgesetzt. Sensor-Werte werden nur live angezeigt.
+
+Vollständige Dokumentation: [`OFFLINE_MODE.md`](OFFLINE_MODE.md)
+
+### Modus per Umgebungsvariable erzwingen (headless)
+
+```bash
+export SIA_OPERATING_MODE=offline   # Offline-Modus, kein Startup-Menü
+export SIA_OPERATING_MODE=online    # Online-Modus, kein Startup-Menü (Standard)
+```
+
 ### Aktuell empfohlenes Runtime-Modell
 
 Die Raspberry-Pi-UI sollte als **Desktop-Anwendung** laufen, die über den Desktop-Autostart gestartet wird.

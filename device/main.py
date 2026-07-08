@@ -5,14 +5,21 @@ from device.aggregation_service import AggregationService
 from device.config import DeviceConfig
 from device.gpio_handler import GpioHandler
 from device.models import MoodCounts
+from device.offline_storage import OfflineStorage
 from device.sensor_service import SensorService
 from device.ui import DeviceUI
 from device.upload_service import UploadService
 
+# Exponential-backoff bounds for the server health-check interval (seconds).
+_HEALTH_CHECK_MIN_S: float = 30.0
+_HEALTH_CHECK_MAX_S: float = 60.0
+
 
 class DeviceApp:
-    def __init__(self) -> None:
+    def __init__(self, operating_mode: str = "online") -> None:
         self.config = DeviceConfig()
+        # operating_mode from the startup menu takes priority; fall back to config value.
+        self.operating_mode: str = operating_mode if operating_mode in ("online", "offline") else self.config.operating_mode
         self.sensor_service = SensorService(
             read_interval_seconds=self.config.sensor_interval_seconds,
             simulation_mode=self.config.simulation_mode,
@@ -32,6 +39,7 @@ class DeviceApp:
             retry_file=self.config.retry_file_path,
             timeout_seconds=self.config.upload_timeout_seconds,
         )
+        self.offline_storage = OfflineStorage(data_file=self.config.offline_data_file)
         self.ui = DeviceUI(
             width=self.config.display_width,
             height=self.config.display_height,
@@ -50,17 +58,26 @@ class DeviceApp:
         self._server_connected: bool = False
         self._last_upload_status: str = "—"
 
-        # Check server health on startup
-        self._server_connected = self.upload_service.check_server_health()
-        today_counts_ok = self._refresh_today_counts()
-        self._server_connected = self._server_connected or today_counts_ok
+        # Time-based server health check with exponential backoff.
+        # Initialise _last_health_check to now so the first automatic check
+        # happens after _HEALTH_CHECK_MIN_S, not immediately.
+        self._health_check_interval: float = _HEALTH_CHECK_MIN_S
+        self._last_health_check: float = time.monotonic()
+
+        if self.operating_mode == "offline":
+            # Pure offline: load counts from local storage only
+            self.today_base_counts = self.offline_storage.load_daily_counts()
+            self.today_counts_date = datetime.now().date().isoformat()
+        else:
+            # Online: check server health and fetch today's counts
+            self._server_connected = self.upload_service.check_server_health()
+            today_counts_ok = self._refresh_today_counts()
+            self._server_connected = self._server_connected or today_counts_ok
 
     def run(self) -> None:
         self.running = True
         self.sensor_service.start()
         self.gpio_handler.start()
-
-        health_check_counter = 0
 
         try:
             while self.running:
@@ -72,59 +89,10 @@ class DeviceApp:
                     self.running = False
                     break
 
-                # Handle keyboard (or future GPIO button) actions
-                # To add physical buttons: check button flags from gpio_handler here
-                # alongside self.ui.action_upload / self.ui.action_reset_daily.
-                if self.ui.action_upload:
-                    self._manual_upload()
-                if self.ui.action_reset_daily:
-                    if self._refresh_today_counts():
-                        self._set_upload_status(now, "Tageszähler aktualisiert")
-                    else:
-                        self._set_upload_status(now, "Tageszähler-Abruf fehlgeschlagen")
-
-                status_updated = self.ui.action_upload or self.ui.action_reset_daily
-
-                # Live-event track: upload one measurement per button press so
-                # the website reflects mood changes without waiting for the next
-                # hourly sensor aggregate window.
-                live_events = self.gpio_handler.pop_live_events()
-                if live_events:
-                    self._apply_pending_live_events(live_events)
-                    if latest is None:
-                        self.gpio_handler.requeue_live_events(live_events)
-                        self._set_upload_status(now, f"Live wartet: {len(live_events)} ohne Sensordaten")
-                        status_updated = True
-                    else:
-                        any_live_success = False
-                        for mood in live_events:
-                            success, status_msg = self.upload_service.upload_live_event(mood, latest, now)
-                            self._server_connected = success
-                            if success:
-                                any_live_success = True
-                                self._mark_uploaded_live_event(mood)
-                                self._set_upload_status(now, f"Live: {mood} {status_msg}")
-                            else:
-                                self._set_upload_status(
-                                    now,
-                                    f"Live fehlgeschlagen (gepuffert): {mood} {status_msg}",
-                                )
-                            status_updated = True
-                        if any_live_success:
-                            self._refresh_today_counts()
-
-                retried_count, remaining_count = self.upload_service.retry_pending_uploads()
-                if retried_count:
-                    self._refresh_today_counts()
-                if (retried_count or remaining_count) and not status_updated:
-                    self._set_upload_status(now, f"Retry: {retried_count} gesendet, {remaining_count} offen")
-                self._try_periodic_sensor_upload(now)
-
-                # Refresh server connection status every ~30 loop ticks
-                health_check_counter += 1
-                if health_check_counter >= 30:
-                    self._server_connected = self.upload_service.check_server_health()
-                    health_check_counter = 0
+                if self.operating_mode == "offline":
+                    self._run_offline_tick(now)
+                else:
+                    self._run_online_tick(now, latest)
 
                 self.ui.draw(
                     latest,
@@ -132,6 +100,7 @@ class DeviceApp:
                     self.today_pending_counts,
                     self._server_connected,
                     self._last_upload_status,
+                    self.operating_mode,
                 )
 
                 time.sleep(self.config.ui_refresh_seconds)
@@ -139,6 +108,116 @@ class DeviceApp:
             print("Stopping device app...")
         finally:
             self.shutdown()
+
+    def _run_offline_tick(self, now: datetime) -> None:
+        """Main-loop body for pure offline mode.
+
+        Button presses are recorded directly to local storage; no server
+        communication is attempted.  The daily counter resets automatically
+        at midnight.
+        """
+        # Midnight rollover
+        was_reset, new_counts = self.offline_storage.reset_on_new_day(
+            self.today_base_counts or MoodCounts()
+        )
+        if was_reset:
+            self.today_base_counts = new_counts
+            self.today_pending_counts = MoodCounts()
+            self.today_uploaded_pending_counts = MoodCounts()
+            self.today_counts_date = now.astimezone().date().isoformat()
+
+        # Handle keyboard actions (upload / reset keys are no-ops in offline mode)
+        if self.ui.action_reset_daily:
+            self.today_base_counts = MoodCounts()
+            self.today_pending_counts = MoodCounts()
+            self.today_uploaded_pending_counts = MoodCounts()
+            self.offline_storage.save_daily_counts(MoodCounts())
+            self._set_upload_status(now, "Tageszähler zurückgesetzt (lokal)")
+
+        # Button presses → increment + persist immediately
+        live_events = self.gpio_handler.pop_live_events()
+        if live_events:
+            for mood in live_events:
+                self._increment_mood_count(self.today_pending_counts, mood)
+            combined = self._get_display_counts() or MoodCounts()
+            self.offline_storage.save_daily_counts(combined)
+
+    def _run_online_tick(self, now: datetime, latest) -> None:
+        """Main-loop body for online mode (with or without server connection).
+
+        Preserves all original upload behaviour.  Health checks are now
+        time-based with exponential back-off to avoid hammering the server
+        when it is temporarily unreachable.
+        """
+        # Handle keyboard (or future GPIO button) actions
+        if self.ui.action_upload:
+            self._manual_upload()
+        if self.ui.action_reset_daily:
+            if self._refresh_today_counts():
+                self._set_upload_status(now, "Tageszähler aktualisiert")
+            else:
+                self._set_upload_status(now, "Tageszähler-Abruf fehlgeschlagen")
+
+        status_updated = self.ui.action_upload or self.ui.action_reset_daily
+
+        # Live-event track: upload one measurement per button press so
+        # the website reflects mood changes without waiting for the next
+        # hourly sensor aggregate window.
+        live_events = self.gpio_handler.pop_live_events()
+        if live_events:
+            self._apply_pending_live_events(live_events)
+            if latest is None:
+                self.gpio_handler.requeue_live_events(live_events)
+                self._set_upload_status(now, f"Live wartet: {len(live_events)} ohne Sensordaten")
+                status_updated = True
+            else:
+                any_live_success = False
+                for mood in live_events:
+                    success, status_msg = self.upload_service.upload_live_event(mood, latest, now)
+                    self._server_connected = success
+                    if success:
+                        any_live_success = True
+                        self._mark_uploaded_live_event(mood)
+                        self._set_upload_status(now, f"Live: {mood} {status_msg}")
+                    else:
+                        self._set_upload_status(
+                            now,
+                            f"Live fehlgeschlagen (gepuffert): {mood} {status_msg}",
+                        )
+                    status_updated = True
+                if any_live_success:
+                    self._refresh_today_counts()
+
+                # Also mirror accepted button presses to offline storage so the
+                # counts are available when the server is temporarily offline.
+                combined = self._get_display_counts() or MoodCounts()
+                self.offline_storage.save_daily_counts(combined)
+
+        retried_count, remaining_count = self.upload_service.retry_pending_uploads()
+        if retried_count:
+            self._refresh_today_counts()
+        if (retried_count or remaining_count) and not status_updated:
+            self._set_upload_status(now, f"Retry: {retried_count} gesendet, {remaining_count} offen")
+        self._try_periodic_sensor_upload(now)
+
+        # Time-based server health check with exponential backoff.
+        # Interval starts at 30 s, doubles on each failure (max 60 s),
+        # and resets to 30 s after a successful connection.
+        now_ts = time.monotonic()
+        if now_ts - self._last_health_check >= self._health_check_interval:
+            was_connected = self._server_connected
+            self._server_connected = self.upload_service.check_server_health()
+            self._last_health_check = now_ts
+            if self._server_connected:
+                self._health_check_interval = _HEALTH_CHECK_MIN_S
+                if not was_connected:
+                    # Reconnected – refresh counts from server
+                    self._refresh_today_counts()
+            else:
+                # Back off until max interval
+                self._health_check_interval = min(
+                    self._health_check_interval * 2, _HEALTH_CHECK_MAX_S
+                )
 
     def shutdown(self) -> None:
         self.running = False
@@ -252,6 +331,11 @@ class DeviceApp:
     def _refresh_today_counts(self) -> bool:
         success, counts, counts_date, _ = self.upload_service.fetch_today_counts(self.config.device_id)
         if not success or counts is None:
+            # Server unavailable – fall back to locally cached counts
+            local = self.offline_storage.load_daily_counts()
+            if self.today_base_counts is None and local.total() > 0:
+                self.today_base_counts = local
+                self.today_counts_date = datetime.now().date().isoformat()
             return False
 
         previous_base = self.today_base_counts
@@ -313,5 +397,17 @@ class DeviceApp:
 
 
 if __name__ == "__main__":
-    app = DeviceApp()
+    from device.startup_ui import StartupMenu
+
+    _config = DeviceConfig()
+    _menu = StartupMenu(
+        width=_config.display_width,
+        height=_config.display_height,
+        fullscreen=_config.fullscreen,
+        good_pin=_config.good_button_pin,
+        neutral_pin=_config.neutral_button_pin,
+        bad_pin=_config.bad_button_pin,
+    )
+    _mode = _menu.run()
+    app = DeviceApp(operating_mode=_mode)
     app.run()

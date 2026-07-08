@@ -38,3 +38,14 @@ class DeviceConfig:
 
     # Path for storing failed uploads that will be retried
     retry_file_path: str = field(default_factory=lambda: os.getenv("SIA_RETRY_FILE", "device/pending_uploads.json"))
+
+    # Operating mode: set by the startup menu at runtime.
+    # Can be overridden via SIA_OPERATING_MODE for headless / automated use.
+    # Valid values: "online" (default) or "offline".
+    operating_mode: str = field(default_factory=lambda: os.getenv("SIA_OPERATING_MODE", "online"))
+
+    # Path for the offline daily-counts file used in offline mode and as an
+    # online fallback when the server is unreachable.
+    offline_data_file: str = field(
+        default_factory=lambda: os.getenv("SIA_OFFLINE_DATA_FILE", "device/tagesgesamt.json")
+    )
