@@ -176,7 +176,7 @@ class SensorService:
             self._simulated_active = simulated_active
 
     def _detect_scd41_bus(self, log_attempts: bool = True) -> Optional[int]:
-        """Detecte welcher I2C-Bus der SCD41 Sensor angeschlossen ist.
+        """Detektiert welcher I2C-Bus der SCD41 Sensor angeschlossen ist.
 
         Versucht Bus 0, 1 und 2 (Standard auf Raspberry Pi).
         Prüft zuerst ob die Devices existieren (/dev/i2c-X) um System-Fehler zu vermeiden.
