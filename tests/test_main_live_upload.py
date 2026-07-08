@@ -164,7 +164,7 @@ class _FakeUI:
         self._handle_calls += 1
         return self._handle_calls == 1
 
-    def draw(self, latest, daily_counts, pending_counts, server_connected, last_upload_status) -> None:
+    def draw(self, latest, daily_counts, pending_counts, server_connected, last_upload_status, operating_mode="online") -> None:
         self.drawn_counts.append(daily_counts)
         self.drawn_pending_counts.append(pending_counts)
         self.drawn_statuses.append(last_upload_status)
@@ -222,6 +222,8 @@ def _build_app(
         fullscreen=False,
         device_id="pi-room-01",
         ui_refresh_seconds=0,
+        operating_mode="online",
+        offline_data_file="device/tagesgesamt.json",
     )
     sensor_service = _FakeSensorService(latest_reading)
     gpio_handler = _FakeGpioHandler(queue)
@@ -229,13 +231,34 @@ def _build_app(
     aggregation_service = _FakeAggregationService(aggregation_payload)
     ui = _FakeUI()
 
+    # Fake OfflineStorage that does nothing (no disk I/O in tests)
+    class _FakeOfflineStorage:
+        def load_daily_counts(self):
+            return MoodCounts()
+
+        def save_daily_counts(self, counts) -> None:
+            pass
+
+        def reset_on_new_day(self, current):
+            return False, current
+
+    _fixed_monotonic = 1000.0  # large fixed value so health-check interval never fires
+
     monkeypatch.setattr(device_main, "DeviceConfig", lambda: config)
     monkeypatch.setattr(device_main, "SensorService", lambda **kwargs: sensor_service)
     monkeypatch.setattr(device_main, "GpioHandler", lambda **kwargs: gpio_handler)
     monkeypatch.setattr(device_main, "AggregationService", lambda: aggregation_service)
     monkeypatch.setattr(device_main, "UploadService", lambda **kwargs: upload_service)
+    monkeypatch.setattr(device_main, "OfflineStorage", lambda **kwargs: _FakeOfflineStorage())
     monkeypatch.setattr(device_main, "DeviceUI", lambda **kwargs: ui)
-    monkeypatch.setattr(device_main, "time", types.SimpleNamespace(sleep=lambda seconds: None))
+    monkeypatch.setattr(
+        device_main,
+        "time",
+        types.SimpleNamespace(
+            sleep=lambda seconds: None,
+            monotonic=lambda: _fixed_monotonic,
+        ),
+    )
     monkeypatch.setattr(device_main.DeviceApp, "_try_periodic_sensor_upload", lambda self, now: None)
 
     return device_main.DeviceApp(), gpio_handler, upload_service, ui

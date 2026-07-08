@@ -82,6 +82,7 @@ class DeviceUI:
         pending_counts: MoodCounts | None = None,
         server_connected: bool = False,
         last_upload_status: str = "—",
+        operating_mode: str = "online",
     ) -> None:
         status = self._pick_status(counts)
 
@@ -90,7 +91,7 @@ class DeviceUI:
         self._draw_sensor_card(reading)
         self._draw_counts_card(counts, pending_counts)
         self._draw_smiley_card(status)
-        self._draw_status_bar(server_connected, last_upload_status)
+        self._draw_status_bar(server_connected, last_upload_status, operating_mode)
         pygame.display.flip()
 
     def close(self) -> None:
@@ -164,19 +165,28 @@ class DeviceUI:
         label_x = 520 + (460 - label.get_width()) // 2
         self.screen.blit(label, (label_x, 420))
 
-    def _draw_status_bar(self, server_connected: bool, last_upload_status: str) -> None:
+    def _draw_status_bar(self, server_connected: bool, last_upload_status: str, operating_mode: str = "online") -> None:
         bar_y = self.height - 34
         pygame.draw.rect(self.screen, self.border_color, pygame.Rect(0, bar_y, self.width, 34))
 
-        conn_color = self.ok_color if server_connected else self.err_color
-        conn_text = "Server: verbunden" if server_connected else "Server: offline"
-
-        parts = [
-            (f"Gerät: {self.device_id}", self.subtle_color),
-            (conn_text, conn_color),
-            (f"Letzter Upload: {last_upload_status}", self.subtle_color),
-            ("[U] Upload  [R] Aktualisieren  [ESC] Beenden", self.subtle_color),
-        ]
+        if operating_mode == "offline":
+            mode_text = "Modus: Offline (Lokal)"
+            mode_color = self.warn_color
+            parts = [
+                (f"Gerät: {self.device_id}", self.subtle_color),
+                (mode_text, mode_color),
+                ("[ESC] Beenden", self.subtle_color),
+            ]
+        else:
+            conn_color = self.ok_color if server_connected else self.err_color
+            server_status = "verbunden" if server_connected else "offline (lokal gepuffert)"
+            mode_text = f"Modus: Online | Server: {server_status}"
+            parts = [
+                (f"Gerät: {self.device_id}", self.subtle_color),
+                (mode_text, conn_color),
+                (f"Letzter Upload: {last_upload_status}", self.subtle_color),
+                ("[U] Upload  [R] Aktualisieren  [ESC] Beenden", self.subtle_color),
+            ]
 
         x = 16
         for text, color in parts:

@@ -49,6 +49,23 @@ chmod +x start_ui.sh
 - schreibt die App-Ausgabe in `ui-autostart.log`
 - enthält Schutz vor Doppelstarts (wenn bereits ein `device.main`-Prozess existiert, wird der Start übersprungen und protokolliert)
 
+### Startup-Menü: Online- oder Offline-Modus wählen
+
+Beim Start erscheint zuerst ein **Auswahlmenü**. Mit den Stimmungs-Buttons den Betriebsmodus wählen:
+
+| Button | Aktion |
+|---|---|
+| **GUT-Taste** (GPIO 27) | Online-Modus starten |
+| **NEUTRAL-Taste** (GPIO 22) | Offline-Modus starten |
+| **SCHLECHT-Taste** (GPIO 17) | Offline-Modus starten |
+| Tastatur **O** / **Enter** | Online-Modus starten |
+| Tastatur **F** | Offline-Modus starten |
+
+Im **Online-Modus** verbindet sich das Gerät mit dem Server und synchronisiert Stimmungsdaten.  
+Im **Offline-Modus** werden Zähler nur lokal in `device/tagesgesamt.json` gespeichert (ideal für Messen).
+
+Vollständige Dokumentation: [`OFFLINE_MODE.md`](OFFLINE_MODE.md)
+
 ## 4) Desktop-Autostart
 
 Den Desktop-Autostart-Eintrag auf dieses Skript zeigen lassen:
