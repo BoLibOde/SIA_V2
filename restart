@@ -1,10 +1,17 @@
 #!/bin/bash
+set -euo pipefail
 
-# Kill all running SIA_V2 sessions
-pkill -f "python -m device.main"
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Wait a moment for processes to terminate
+# Make this script executable
+chmod +x "$APP_DIR/restart"
+
+# Kill all running device instances gracefully
+pkill -f "python -m device.main" || true
+
+# Wait for clean shutdown
 sleep 1
 
-# Start the application
-./start_ui.sh
+# Start the app (visible on desktop, not backgrounded)
+cd "$APP_DIR"
+exec ./start_ui.sh

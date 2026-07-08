@@ -64,7 +64,7 @@ flowchart LR
 
 1. GPIO-Tasten auf dem Device erhöhen die sichtbaren Pi-Stimmungszähler optimistisch im Speicher; der SCD41-Sensor wird periodisch ausgelesen.
    Die sichtbare Pi-UI wird per Desktop-Autostart mit `start_ui.sh` gestartet; für Routine-Neustarts/Deploys dienen
-   `restart_ui.sh` / `update_pi.sh`. Es darf nur eine `python -m device.main`-Instanz laufen (keine parallele
+   `./restart` / `update_pi.sh`. Es darf nur eine `python -m device.main`-Instanz laufen (keine parallele
    `systemd`-Runtime für `device.main`).
 2. Alle 15 Minuten sendet das Device einen Sensor-Aggregat-Payload (`sensor_avg`, `sample_count`) an
    `device_ingest.php`, der genau das abgeschlossene 15-Minuten-Fenster abdeckt (`HH:00–HH:15`, `HH:15–HH:30`,

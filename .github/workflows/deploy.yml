@@ -88,4 +88,8 @@ jobs:
             # this is the safe default: fresh deploy = clean upload state.
             rm -f device/pending_uploads.json
 
-            sudo systemctl restart sia-device
+            # Ensure the restart script is executable after every deploy.
+            # The app runs via Desktop-Autostart (start_ui.sh), not systemd.
+            # systemd is disabled for this Desktop-GUI setup.
+            # Use ./restart manually on the Pi if an immediate restart is needed.
+            chmod +x ~/Desktop/SIA_V2/restart

@@ -165,7 +165,7 @@ pkill -f "python -m device.main"
 printf '{"date":"'$(date +%Y-%m-%d)'","good":0,"neutral":0,"bad":0,"last_updated":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}\n' > ~/Desktop/SIA_V2/device/tagesgesamt.json
 
 # App neu starten
-cd ~/Desktop/SIA_V2 && ./restart_ui.sh
+cd ~/Desktop/SIA_V2 && ./restart
 ```
 
 ### Das Startup-Menü erscheint nicht

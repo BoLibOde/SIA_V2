@@ -253,16 +253,16 @@ Die Raspberry-Pi-UI sollte als **Desktop-Anwendung** laufen, die über den Deskt
 `device.main` darf **nicht** gleichzeitig ein zweites Mal über `systemd` laufen.
 
 - Es darf genau **ein** laufender Prozess `python -m device.main` existieren.
-- Für den Start `./start_ui.sh`, für Neustarts `./restart_ui.sh` und für Deploy/Update `./update_pi.sh` verwenden.
+- Für den Start `./start_ui.sh`, für Neustarts `./restart` und für Deploy/Update `./update_pi.sh` verwenden.
 - Desktop-Autostart ist der bevorzugte Weg, wenn die UI auf dem Pi-Display sichtbar sein muss.
-- Ein paralleler `systemd`-Service für `device.main` kann doppelte Uploads und aufgeblähte Dashboard-Zähler verursachen.
+- Ein paralleler `systemd`-Service für `device.main` ist **disabled** (Desktop-GUI-Setup). Systemd nicht gleichzeitig aktivieren — das verursacht doppelte Uploads und aufgeblähte Dashboard-Zähler.
 - `start_ui.sh` hat einen Schutz vor Doppelstarts und kann statt eines zweiten Starts einen Skip protokollieren.
 
 ### Sauberer Neustart auf dem Pi
 
 ```bash
 cd ~/Desktop/SIA_V2
-./restart_ui.sh
+./restart
 pgrep -af "python -m device.main"
 pgrep -fc "python -m device.main"
 ```
@@ -472,7 +472,7 @@ pgrep -af "python -m device.main"
 
 ```bash
 cd ~/Desktop/SIA_V2
-./restart_ui.sh
+./restart
 pgrep -af "python -m device.main"
 pgrep -fc "python -m device.main"
 ```
@@ -501,7 +501,7 @@ Wenn du veraltete gepufferte Uploads bewusst verwerfen willst, zuerst die App st
 pkill -f "python -m device.main"
 printf '[]\n' > ~/Desktop/SIA_V2/device/pending_uploads.json
 cd ~/Desktop/SIA_V2
-./restart_ui.sh
+./restart
 ```
 
 ### Prüfen, ob `.env.device` vollständig ist
