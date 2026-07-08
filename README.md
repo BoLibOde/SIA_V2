@@ -548,7 +548,7 @@ i2cdetect -y 1      # sollte Gerät bei 0x62 (SCD41) zeigen
 dmesg | grep -i i2c
 ```
 
-Die Device-App erkennt den SCD41-I2C-Bus automatisch (Bus 0/1) und loggt bei Fehlern
+Die Device-App erkennt den SCD41-I2C-Bus automatisch (Bus 0/1/2, nur existierende Devices) und loggt bei Fehlern
 den probierten Bus inkl. Hinweis zur Verkabelung.
 
 ---
