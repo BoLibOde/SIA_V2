@@ -67,6 +67,14 @@ jobs:
           script: |
             set -e
             cd ~/Desktop/SIA_V2
+            # Remove empty/corrupt git object files that can accumulate on the Pi
+            # due to interrupted writes (e.g. power loss, disk full). These cause
+            # 'git fetch' to abort with exit 128 ("object file is empty").
+            EMPTY_OBJS=$(find .git/objects -type f -empty 2>/dev/null | wc -l)
+            if [ "$EMPTY_OBJS" -gt 0 ]; then
+              echo "Removing $EMPTY_OBJS empty git object(s) before fetch..."
+              find .git/objects -type f -empty -delete
+            fi
             git fetch origin main
             git reset --hard origin/main
 
