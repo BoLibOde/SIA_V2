@@ -181,9 +181,14 @@ cp .env.device.example .env.device
 
 ---
 
-## Startup-Menü – Online / Offline Modus
+## Startup-Menü – Modus + Sensor-Fallback
 
-Beim Programmstart erscheint vor der Haupt-App ein **Auswahlmenü**, mit dem der Betriebsmodus für die aktuelle Sitzung gewählt wird.
+Beim Programmstart erscheinen vor der Haupt-App **zwei sequenzielle Menüs**:
+
+1. **Betriebsmodus wählen**: Online / Offline
+2. **Sensor-Strategie wählen**:
+   - **Echte Sensoren** (Standard, kein Fallback)
+   - **Mit Simulation** (Fallback nur wenn Hardware ausfällt)
 
 ### 3 Betriebszustände
 
@@ -195,6 +200,8 @@ Beim Programmstart erscheint vor der Haupt-App ein **Auswahlmenü**, mit dem der
 
 ### Button-Belegung im Startup-Menü
 
+#### Menü 1: Betriebsmodus
+
 | Taste / Button | Aktion |
 |---|---|
 | **GUT-Button** | Online-Modus wählen |
@@ -203,6 +210,17 @@ Beim Programmstart erscheint vor der Haupt-App ein **Auswahlmenü**, mit dem der
 | Tastatur **O** oder **Enter** | Online-Modus wählen |
 | Tastatur **F** | Offline-Modus wählen |
 | Tastatur **ESC** | Im Menü bleiben (wiederholen) |
+
+#### Menü 2: Simulation/Fallback
+
+| Taste / Button | Aktion |
+|---|---|
+| **GUT-Button** | Echte Sensoren (kein Fallback) |
+| **NEUTRAL-Button** | Mit Simulation (Fallback bei Sensor-Ausfall) |
+| **SCHLECHT-Button** | Mit Simulation (Fallback bei Sensor-Ausfall) |
+| Tastatur **E** oder **Enter** | Echte Sensoren |
+| Tastatur **M** oder **S** | Mit Simulation |
+| Tastatur **ESC** | Zurück zu Menü 1 |
 
 ### Offline-Betrieb (z. B. Messe)
 
@@ -216,7 +234,18 @@ Vollständige Dokumentation: [`OFFLINE_MODE.md`](OFFLINE_MODE.md)
 ```bash
 export SIA_OPERATING_MODE=offline   # Offline-Modus, kein Startup-Menü
 export SIA_OPERATING_MODE=online    # Online-Modus, kein Startup-Menü (Standard)
+export SIA_ENABLE_SIMULATION_FALLBACK=false  # Standard: echte Sensoren bevorzugen
 ```
+
+### Sensorstatus in der UI
+
+Die Statusleiste unterscheidet jetzt klar zwischen:
+
+- `Sensoren: OK | CO2: ... ppm` (Sensordaten vorhanden)
+- `Sensoren: ⚠ Fehler` (keine Sensordaten verfügbar)
+
+**Wichtig:** Simulation wird absichtlich **nicht** als eigener UI-Status angezeigt.
+Bei aktivem Fallback laufen nur zusätzliche Logs (z. B. I2C-Bus-Erkennung, Recovery).
 
 ### Aktuell empfohlenes Runtime-Modell
 
@@ -514,9 +543,13 @@ Instabil oder dauerhaft `level=0` ohne Tastendruck → Verkabelung, Pull-up-Wide
 ### I2C-/CO₂-Sensor-Prüfung
 
 ```bash
+i2cdetect -y 0      # Raspberry Pi je nach Modell/Config: Bus 0 oder 1 prüfen
 i2cdetect -y 1      # sollte Gerät bei 0x62 (SCD41) zeigen
 dmesg | grep -i i2c
 ```
+
+Die Device-App erkennt den SCD41-I2C-Bus automatisch (Bus 0/1) und loggt bei Fehlern
+den probierten Bus inkl. Hinweis zur Verkabelung.
 
 ---
 

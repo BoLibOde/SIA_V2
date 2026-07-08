@@ -76,6 +76,15 @@ class _FakeSensorService:
     def discard_samples_before(self, cutoff) -> None:
         pass
 
+    def get_status_text(self) -> str:
+        return "OK" if self.latest_reading is not None else "FEHLER"
+
+    def has_data(self) -> bool:
+        return self.latest_reading is not None
+
+    def is_hardware_active(self) -> bool:
+        return self.latest_reading is not None
+
 
 class _FakeGpioHandler:
     def __init__(self, queue: list[str]) -> None:
@@ -164,7 +173,18 @@ class _FakeUI:
         self._handle_calls += 1
         return self._handle_calls == 1
 
-    def draw(self, latest, daily_counts, pending_counts, server_connected, last_upload_status, operating_mode="online") -> None:
+    def draw(
+        self,
+        latest,
+        daily_counts,
+        pending_counts,
+        server_connected,
+        last_upload_status,
+        operating_mode="online",
+        sensor_status_text="FEHLER",
+        sensor_has_data=False,
+        sensor_hardware_active=False,
+    ) -> None:
         self.drawn_counts.append(daily_counts)
         self.drawn_pending_counts.append(pending_counts)
         self.drawn_statuses.append(last_upload_status)
@@ -207,6 +227,7 @@ def _build_app(
     config = SimpleNamespace(
         sensor_interval_seconds=5,
         simulation_mode=True,
+        enable_simulation_fallback=False,
         good_button_pin=1,
         neutral_button_pin=2,
         bad_button_pin=3,

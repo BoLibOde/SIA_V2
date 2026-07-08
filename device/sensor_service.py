@@ -25,10 +25,11 @@ COMMAND_STOP_MEASUREMENT = [0x3F, 0x86]
 COMMAND_SOFT_RESET = [0x36, 0x82]
 
 # Resilience knobs
-_INIT_RETRIES = 5          # max consecutive init failures before falling back to simulation
+_INIT_RETRIES = 5          # max consecutive init failures before evaluating fallback
 _MAX_READ_ERRORS = 5       # consecutive read errors that trigger a hardware-session restart
 _INIT_RETRY_DELAY = 2.0    # seconds between init attempts
 _REINIT_DELAY = 2.0        # seconds before restarting after read-error recovery
+_RECOVERY_CHECK_INTERVAL = 5.0  # seconds between hardware recovery checks in simulation fallback
 
 # Plausibility bounds for raw SCD41 output
 _CO2_MIN_PPM = 350
@@ -90,9 +91,16 @@ def _read_measurement(bus: SMBus, address: int) -> tuple[int, float, float]:
 
 
 class SensorService:
-    def __init__(self, read_interval_seconds: int = 5, simulation_mode: bool = False, max_samples: int = 720) -> None:
+    def __init__(
+        self,
+        read_interval_seconds: int = 5,
+        simulation_mode: bool = False,
+        enable_simulation_fallback: bool = False,
+        max_samples: int = 720,
+    ) -> None:
         self.read_interval_seconds = max(1, int(read_interval_seconds))
         self.simulation_mode = simulation_mode
+        self.enable_simulation_fallback = enable_simulation_fallback
         self.max_samples = max(10, int(max_samples))
 
         self.running = False
@@ -104,6 +112,8 @@ class SensorService:
         self._sim_temp = 22.0
         self._sim_humidity = 45.0
         self._sim_co2 = 500
+        self._simulated_active = False
+        self._hardware_active = False
 
     def start(self) -> None:
         if self.running:
@@ -136,12 +146,78 @@ class SensorService:
         with self.lock:
             self.readings = [r for r in self.readings if r.timestamp >= cutoff]
 
+    def is_simulated(self) -> bool:
+        with self.lock:
+            return self._simulated_active
+
+    def is_hardware_active(self) -> bool:
+        with self.lock:
+            return self._hardware_active
+
+    def has_data(self) -> bool:
+        with self.lock:
+            return self.latest_reading is not None
+
+    def get_status_text(self) -> str:
+        return "OK" if self.has_data() else "FEHLER"
+
     def _append_reading(self, reading: SensorReading) -> None:
         with self.lock:
             self.latest_reading = reading
             self.readings.append(reading)
             if len(self.readings) > self.max_samples:
                 del self.readings[0:len(self.readings) - self.max_samples]
+
+    def _set_mode_flags(self, *, hardware_active: bool, simulated_active: bool) -> None:
+        with self.lock:
+            self._hardware_active = hardware_active
+            self._simulated_active = simulated_active
+
+    def _detect_scd41_bus(self, log_attempts: bool = True) -> Optional[int]:
+        for bus_id in (0, 1):
+            attempt_log = _LOG.info if log_attempts else _LOG.debug
+            attempt_log(
+                "I2C-Bus Auto-Detektion: Versuche Bus %d für SCD41 (Adresse 0x%02X)",
+                bus_id,
+                SCD41_I2C_ADDR,
+            )
+            try:
+                with SMBus(bus_id) as bus:
+                    bus.write_i2c_block_data(
+                        SCD41_I2C_ADDR,
+                        COMMAND_STOP_MEASUREMENT[0],
+                        COMMAND_STOP_MEASUREMENT[1:],
+                    )
+                    time.sleep(0.05)
+                _LOG.info("SCD41 auf Bus %d gefunden (Adresse 0x%02X)", bus_id, SCD41_I2C_ADDR)
+                return bus_id
+            except Exception as error:
+                error_log = _LOG.warning if log_attempts else _LOG.debug
+                error_log(
+                    "SCD41 auf Bus %d nicht erreichbar (Adresse 0x%02X): %s. "
+                    "Hinweis: Prüfe I2C-Verbindung des SCD41 Sensors auf Bus %d",
+                    bus_id,
+                    SCD41_I2C_ADDR,
+                    error,
+                    bus_id,
+                )
+        return None
+
+    def _run_simulation_with_recovery(self) -> bool:
+        self._set_mode_flags(hardware_active=False, simulated_active=True)
+        next_recovery_check = 0.0
+        while self.running:
+            self._append_reading(self._simulated_read())
+            now = time.monotonic()
+            if now >= next_recovery_check:
+                bus_id = self._detect_scd41_bus(log_attempts=False)
+                if bus_id is not None:
+                    _LOG.info("SCD41 Hardware wiederhergestellt - wechsel zu echten Sensoren (Bus %d)", bus_id)
+                    self._set_mode_flags(hardware_active=False, simulated_active=False)
+                    return True
+                next_recovery_check = now + _RECOVERY_CHECK_INTERVAL
+            time.sleep(self.read_interval_seconds)
+        return False
 
     def _simulated_read(self) -> SensorReading:
         self._sim_temp += random.uniform(-0.15, 0.15)
@@ -160,24 +236,34 @@ class SensorService:
 
     def _hardware_loop(self) -> None:
         init_failures = 0
+        self._set_mode_flags(hardware_active=False, simulated_active=False)
 
         while self.running:
             if init_failures >= _INIT_RETRIES:
-                _LOG.warning(
-                    "SCD41 hardware mode failed after %d attempts, switching to simulation",
+                _LOG.error(
+                    "SCD41 Hardware fehlgeschlagen nach %d Versuchen",
                     _INIT_RETRIES,
                 )
-                while self.running:
-                    self._append_reading(self._simulated_read())
-                    time.sleep(self.read_interval_seconds)
-                return
+                if self.enable_simulation_fallback:
+                    _LOG.warning("Fallback auf Simulation aktiviert")
+                    recovered = self._run_simulation_with_recovery()
+                    if recovered:
+                        init_failures = 0
+                        continue
+                    return
+                _LOG.warning("Simulation-Fallback deaktiviert – Sensor bleibt ohne Daten, Hardware wird weiter geprüft")
+                init_failures = 0
 
             if init_failures > 0:
                 time.sleep(_INIT_RETRY_DELAY)
 
             read_restart = False
+            bus_id = self._detect_scd41_bus()
+            if bus_id is None:
+                init_failures += 1
+                continue
             try:
-                with SMBus(1) as bus:
+                with SMBus(bus_id) as bus:
                     # Stop any in-progress measurement before resetting
                     try:
                         bus.write_i2c_block_data(
@@ -203,8 +289,13 @@ class SensorService:
                     )
                     time.sleep(5.0)
 
-                    _LOG.info("SCD41 hardware mode initialized successfully")
+                    _LOG.info(
+                        "SCD41 hardware mode initialized successfully on bus %d (Adresse 0x%02X)",
+                        bus_id,
+                        SCD41_I2C_ADDR,
+                    )
                     init_failures = 0
+                    self._set_mode_flags(hardware_active=True, simulated_active=False)
 
                     consecutive_errors = 0
                     while self.running:
@@ -223,15 +314,20 @@ class SensorService:
                         except Exception as error:
                             consecutive_errors += 1
                             _LOG.warning(
-                                "SCD41 read failed (%d/%d): %s",
+                                "SCD41 read failed (%d/%d) on bus %d (Adresse 0x%02X): %s. "
+                                "Hinweis: Prüfe I2C-Verbindung des SCD41 Sensors auf Bus %d",
                                 consecutive_errors,
                                 _MAX_READ_ERRORS,
+                                bus_id,
+                                SCD41_I2C_ADDR,
                                 error,
+                                bus_id,
                             )
                             if consecutive_errors >= _MAX_READ_ERRORS:
                                 _LOG.warning(
                                     "Too many consecutive SCD41 read errors, restarting hardware session"
                                 )
+                                self._set_mode_flags(hardware_active=False, simulated_active=False)
                                 read_restart = True
                                 break
 
@@ -247,23 +343,35 @@ class SensorService:
                         _LOG.debug("SCD41 post-loop stop failed (ignored): %s", _stop_err)
 
             except Exception as error:
+                self._set_mode_flags(hardware_active=False, simulated_active=False)
                 init_failures += 1
                 _LOG.warning(
-                    "SCD41 init attempt %d/%d failed: %s",
+                    "SCD41 init attempt %d/%d failed on bus %d (Adresse 0x%02X): %s. "
+                    "Hinweis: Prüfe I2C-Verbindung des SCD41 Sensors auf Bus %d",
                     init_failures,
                     _INIT_RETRIES,
+                    bus_id,
+                    SCD41_I2C_ADDR,
                     error,
+                    bus_id,
                 )
 
             if read_restart and self.running:
                 time.sleep(_REINIT_DELAY)
 
     def _loop(self) -> None:
-        if self.simulation_mode or not SMBUS2_AVAILABLE:
-            if not SMBUS2_AVAILABLE and not self.simulation_mode:
-                _LOG.warning("smbus2 not available, using simulation mode")
+        if self.simulation_mode:
+            _LOG.info("Simulation mode explizit aktiviert (CLI/ENV Override)")
+            self._set_mode_flags(hardware_active=False, simulated_active=True)
             while self.running:
                 self._append_reading(self._simulated_read())
+                time.sleep(self.read_interval_seconds)
+            return
+
+        if not SMBUS2_AVAILABLE:
+            _LOG.error("smbus2 ist nicht verfügbar. Echte Sensoren können nicht gelesen werden.")
+            self._set_mode_flags(hardware_active=False, simulated_active=False)
+            while self.running:
                 time.sleep(self.read_interval_seconds)
             return
 
