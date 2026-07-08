@@ -12,6 +12,22 @@ pkill -f "python -m device.main" || true
 # Wait for clean shutdown
 sleep 1
 
-# Start the app (visible on desktop, not backgrounded)
+# Start the app and show logs live in console
 cd "$APP_DIR"
-exec ./start_ui.sh
+
+# Load environment if it exists
+if [ -f "$APP_DIR/.env.device" ]; then
+    set -a
+    . "$APP_DIR/.env.device"
+    set +a
+fi
+
+# Ensure venv exists and is activated
+VENV="$APP_DIR/.venv"
+if [ ! -d "$VENV" ]; then
+    python3 -m venv --system-site-packages "$VENV"
+fi
+
+# Activate venv and run device.main with live console output
+source "$VENV/bin/activate"
+exec python -m device.main
