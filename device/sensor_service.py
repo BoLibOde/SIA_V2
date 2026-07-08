@@ -186,10 +186,10 @@ class SensorService:
                 with SMBus(bus_id) as bus:
                     bus.write_i2c_block_data(
                         SCD41_I2C_ADDR,
-                        COMMAND_STOP_MEASUREMENT[0],
-                        COMMAND_STOP_MEASUREMENT[1:],
+                        COMMAND_GET_DATA_READY[0],
+                        COMMAND_GET_DATA_READY[1:],
                     )
-                    time.sleep(0.05)
+                    time.sleep(0.01)
                 _LOG.info("SCD41 auf Bus %d gefunden (Adresse 0x%02X)", bus_id, SCD41_I2C_ADDR)
                 return bus_id
             except Exception as error:
