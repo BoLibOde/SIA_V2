@@ -14,5 +14,15 @@ if (!isset($_SESSION['user_id'])) {
 $selectedLocationId = isset($_GET['location_id']) ? (int)$_GET['location_id'] : 0;
 $selectedRange = dashboard_normalize_range($_GET['range'] ?? 'tag');
 
+if ($selectedLocationId > 0) {
+    $stmt = $pdo->prepare("SELECT id FROM locations WHERE id = :id AND aktiv = 1");
+    $stmt->execute([':id' => $selectedLocationId]);
+    if (!$stmt->fetch()) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Location not accessible'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
 $payload = dashboard_fetch_data($pdo, $selectedLocationId, $selectedRange);
 echo json_encode($payload, JSON_UNESCAPED_UNICODE);

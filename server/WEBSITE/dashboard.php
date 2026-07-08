@@ -72,11 +72,11 @@ $co2BarWidth = $dashboardData['summary']['co2BarWidth'];
 </form>
 
 <div class="time-selector" aria-label="Zeitraum auswählen">
-    <button class="time-box <?= $selectedRange === 'tag' ? 'active' : '' ?>" data-range="tag" type="button" onclick="window.location.href='?location_id=<?= $selectedLocationId ?>&range=tag'">Tag</button>
-    <button class="time-box <?= $selectedRange === 'woche' ? 'active' : '' ?>" data-range="woche" type="button" onclick="window.location.href='?location_id=<?= $selectedLocationId ?>&range=woche'">Woche</button>
-    <button class="time-box <?= $selectedRange === 'monat' ? 'active' : '' ?>" data-range="monat" type="button" onclick="window.location.href='?location_id=<?= $selectedLocationId ?>&range=monat'">Monat</button>
-    <button class="time-box <?= $selectedRange === 'jahr' ? 'active' : '' ?>" data-range="jahr" type="button" onclick="window.location.href='?location_id=<?= $selectedLocationId ?>&range=jahr'">Jahr</button>
-    <button class="time-box <?= $selectedRange === 'gesamt' ? 'active' : '' ?>" data-range="gesamt" type="button" onclick="window.location.href='?location_id=<?= $selectedLocationId ?>&range=gesamt'">Gesamt</button>
+    <button class="time-box <?= $selectedRange === 'tag' ? 'active' : '' ?>" data-range="tag" type="button">Tag</button>
+    <button class="time-box <?= $selectedRange === 'woche' ? 'active' : '' ?>" data-range="woche" type="button">Woche</button>
+    <button class="time-box <?= $selectedRange === 'monat' ? 'active' : '' ?>" data-range="monat" type="button">Monat</button>
+    <button class="time-box <?= $selectedRange === 'jahr' ? 'active' : '' ?>" data-range="jahr" type="button">Jahr</button>
+    <button class="time-box <?= $selectedRange === 'gesamt' ? 'active' : '' ?>" data-range="gesamt" type="button">Gesamt</button>
 </div>
 
 <div class="dashboard">
@@ -142,11 +142,7 @@ $co2BarWidth = $dashboardData['summary']['co2BarWidth'];
 <script>
     const moodChartData = <?= json_encode($moodData, JSON_UNESCAPED_UNICODE) ?>;
     const temperatureChartData = {
-        tag: <?= json_encode($temperatureData, JSON_UNESCAPED_UNICODE) ?>,
-        woche: <?= json_encode($temperatureData, JSON_UNESCAPED_UNICODE) ?>,
-        monat: <?= json_encode($temperatureData, JSON_UNESCAPED_UNICODE) ?>,
-        jahr: <?= json_encode($temperatureData, JSON_UNESCAPED_UNICODE) ?>,
-        gesamt: <?= json_encode($temperatureData, JSON_UNESCAPED_UNICODE) ?>
+        <?= $selectedRange ?>: <?= json_encode($temperatureData, JSON_UNESCAPED_UNICODE) ?>
     };
     const dashboardConfig = {
         locationId: <?= (int)$selectedLocationId ?>,
