@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# Kill all running SIA_V2 sessions
+pkill -f "python -m device.main"
+
+# Wait a moment for processes to terminate
+sleep 1
+
+# Start the application
+./start_ui.sh
